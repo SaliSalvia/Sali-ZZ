@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Brand colors inspired by the violet, cyan and gold logo -->
+    <color name="purple_primary">#7654D8</color>
+    <color name="purple_dark">#4F348F</color>
+    <color name="purple_light">#B39BFF</color>
+    <color name="purple_accent">#55D7EE</color>
+    <color name="brand_gold">#D7B56D</color>
+
+    <!-- Dark theme colors -->
+    <color name="dark_background">#000000</color>
+    <color name="dark_surface">#100F16</color>
+    <color name="dark_surface_variant">#1C1925</color>
+    <color name="dark_on_background">#F3F0EA</color>
+    <color name="dark_on_surface">#F8F6F1</color>
+    <color name="dark_on_surface_variant">#B9B4C1</color>
+    <color name="dark_outline">#393344</color>
+
+    <!-- Light theme colors -->
+    <color name="light_background">#F5F2ED</color>
+    <color name="light_surface">#FFFEFC</color>
+    <color name="light_surface_variant">#EFECF3</color>
+    <color name="light_on_background">#1C1922</color>
+    <color name="light_on_surface">#1C1922</color>
+    <color name="light_on_surface_variant">#625D69</color>
+    <color name="light_outline">#D7D0DE</color>
+
+    <!-- Splash screen -->
+    <color name="splash_background">#000000</color>
+</resources>
