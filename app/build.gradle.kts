@@ -1,4 +1,6 @@
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+import java.util.Properties
+import java.io.FileInputStream
 
 plugins {
     id("com.android.application")
@@ -16,8 +18,8 @@ android {
         applicationId = "com.salizzai.app"
         minSdk = 26  // Required for PBKDF2WithHmacSHA256
         targetSdk = 35
-        versionCode = 2
-        versionName = "2.0.0"
+        versionCode = 3
+        versionName = "2.0.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
 
@@ -25,19 +27,61 @@ android {
         buildConfigField("String", "ZAI_BASE_URL", "\"https://api.z.ai/api/v1\"")
     }
 
+    // ─── Release signing config ────────────────────────────────────
+    // Loads keystore from environment variables (set by GitHub Actions
+    // from repository secrets). Falls back to debug key for local dev.
+    //
+    // Required env vars:
+    //   SIGNING_KEYSTORE_FILE     — path to .jks file (decoded from secret)
+    //   SIGNING_KEYSTORE_PASSWORD — keystore password
+    //   SIGNING_KEY_ALIAS         — alias name
+    //   SIGNING_KEY_PASSWORD      — key password
+    //
+    // Local dev (no env vars set) → uses debug key automatically.
+    val keystoreFile = System.getenv("SIGNING_KEYSTORE_FILE")
+    val keystorePass = System.getenv("SIGNING_KEYSTORE_PASSWORD")
+    val keyAlias     = System.getenv("SIGNING_KEY_ALIAS")
+    val keyPass      = System.getenv("SIGNING_KEY_PASSWORD")
+
+    if (keystoreFile != null && java.io.File(keystoreFile).exists()) {
+        signingConfigs {
+            create("release") {
+                storeFile = java.io.File(keystoreFile)
+                storePassword = keystorePass
+                keyAlias = keyAlias
+                keyPassword = keyPass
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true   // APK Signature Scheme v3 (key rotation)
+            }
+        }
+        println("✅ Release signing config loaded from $keystoreFile")
+    } else {
+        println("⚠️  No release keystore found — falling back to debug signing")
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
-            isShrinkResources = true
-            // R8 full mode for tighter shrinking and better startup performance
+            // ⚠️  CRITICAL FIX: Resource shrinking was REMOVED.
+            // It was incorrectly stripping `splash_background.xml` because
+            // it's only referenced from the theme's windowBackground (not
+            // from Java code), causing:
+            //   Resources$NotFoundException: Drawable .../splash_background
+            //   with resource ID #0x7f060033
+            // at app launch on real devices (Xiaomi MIUI confirmed).
+            isShrinkResources = false
             isCrunchPngs = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            // Sign release with debug key by default (so GitHub Actions can build)
-            // For production, replace with real keystore
-            signingConfig = signingConfigs.getByName("debug")
+            // Use real release keystore if available, otherwise debug key
+            signingConfig = if (keystoreFile != null && java.io.File(keystoreFile).exists()) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
         debug {
             isDebuggable = true
@@ -56,8 +100,8 @@ android {
         buildConfig = true
     }
 
-    // Large PNG logo files in drawable-nodpi/ should not be re-crunched (causes AAPT2 errors
-    // when the source image is already optimized externally).
+    // Large PNG logo files in drawable-nodpi/ should not be re-crunched
+    // (causes AAPT2 errors when the source image is already optimized externally).
     androidResources {
         // No-op here for clarity, but reserves the block if we need to set crunchMode later.
     }

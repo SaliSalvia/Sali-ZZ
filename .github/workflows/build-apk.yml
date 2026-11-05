@@ -1,139 +1,114 @@
-name: Build Native Android APK
+name: Build SaliBussiness APK
 
 on:
-  push:
-    branches: [main, master]
-    tags: ['v*']
-  pull_request:
-    branches: [main, master]
   workflow_dispatch:
+  push:
+    branches: [ main, 'arena/**', 'copilot/**', 'fix/**' ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-sali-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
-    name: Build APK
+    name: Test and build APK
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
     steps:
-      - name: 📥 Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: ☕ Setup JDK 17
-        uses: actions/setup-java@v4
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
         with:
-          distribution: 'temurin'
+          distribution: temurin
           java-version: '17'
 
-      - name: 🤖 Setup Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
-
-      # NOTE: Cache steps intentionally removed — GitHub's cache service has
-      # been intermittently failing with "Our services aren't available right now".
-      # Builds without cache take longer but are reliable.
-
-      - name: 🔧 Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
+      - name: Set up Gradle 8.9 (with caching)
+        uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-          cache-disabled: true
 
-      - name: 📦 Verify Gradle Wrapper
-        run: |
-          if [ ! -f gradle/wrapper/gradle-wrapper.jar ]; then
-            echo "::error::gradle-wrapper.jar is missing! Generating..."
-            gradle wrapper --gradle-version 8.9 --distribution-type bin
-          else
-            echo "✅ Wrapper jar present"
-            ls -la gradle/wrapper/
-          fi
+      # تا وقتی wrapper واقعی در ریپو commit نشده، از توزیع پین‌شده 8.9 تولید می‌کنیم.
+      # گام بعدی (فاز ۲): commit کردن gradlew + gradle-wrapper.jar + gradle-wrapper.properties
+      - name: Generate Gradle wrapper (pinned 8.9)
+        run: gradle wrapper --gradle-version 8.9 --distribution-type bin
 
-      - name: 🔐 Grant execute permission for gradlew
-        run: chmod +x ./gradlew
+      - name: Make wrapper executable
+        run: chmod +x gradlew
 
-      - name: 🧹 Clean previous builds
-        run: ./gradlew clean --no-daemon --no-configuration-cache
+      - name: Run unit tests
+        run: ./gradlew --no-daemon test
+
+      # تا پاک‌سازی baseline، lint بلاک‌کننده نیست ولی گزارشش در artifact diagnostics هست.
+      - name: Android lint (non-blocking until baseline is clean)
         continue-on-error: true
+        run: ./gradlew --no-daemon lintDebug
 
-      - name: 🧪 Run Unit Tests
-        run: ./gradlew testDebugUnitTest --stacktrace --no-daemon --no-configuration-cache
-        timeout-minutes: 15
-        # Tests run before the APK builds; failures are reported in the job
-        # summary but do not block APK creation (release readiness is judged
-        # by the build steps below).
+      - name: Build debug APK (always installable)
+        run: ./gradlew --no-daemon assembleDebug
 
-      - name: 🏗️ Build Debug APK
-        run: ./gradlew assembleDebug --stacktrace --no-daemon --no-configuration-cache
-        timeout-minutes: 40
-
-      - name: 🚀 Build Release APK
-        run: ./gradlew assembleRelease --stacktrace --no-daemon --no-configuration-cache
-        timeout-minutes: 40
-        # If release (R8) fails we still fall back to the debug APK, so this
-        # step must not fail the whole job.
-        continue-on-error: true
-
-      - name: 📋 Find APK (release first, then debug fallback)
-        id: find_apk
+      - name: Collect debug APK
         run: |
-          echo "All APK files:"
-          find . -name "*.apk" -type f 2>/dev/null || true
-          APK=""
-          for candidate in \
-            app/build/outputs/apk/release/app-release.apk \
-            app/build/outputs/apk/release/app-release-unsigned.apk \
-            app/build/outputs/apk/debug/app-debug.apk; do
-            if [ -f "$candidate" ]; then
-              APK="$candidate"
-              break
-            fi
-          done
-          if [ -z "$APK" ]; then
-            echo "::error::No APK found"
-            exit 1
-          fi
-          echo "path=$APK" >> $GITHUB_OUTPUT
-          echo "Found APK at: $APK"
-          cp "$APK" Sali-ZZai.apk
-          ls -lh Sali-ZZai.apk
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/app-debug.apk dist/SaliBussiness-debug.apk
 
-      - name: 📤 Upload APK artifact
+      # APK امضاشده فقط وقتی ساخته می‌شود که «هر چهار» سیکرت تنظیم شده باشد.
+      # APK دیباگ هرگز به‌عنوان نسخه انتشار عرضه نمی‌شود.
+      - name: Build SIGNED release APK (only when all 4 signing secrets exist)
+        env:
+          SALI_KEYSTORE_BASE64: ${{ secrets.SALI_KEYSTORE_BASE64 }}
+          SALI_KEYSTORE_PASSWORD: ${{ secrets.SALI_KEYSTORE_PASSWORD }}
+          SALI_KEY_ALIAS: ${{ secrets.SALI_KEY_ALIAS }}
+          SALI_KEY_PASSWORD: ${{ secrets.SALI_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$SALI_KEYSTORE_BASE64" || -z "$SALI_KEYSTORE_PASSWORD" || -z "$SALI_KEY_ALIAS" || -z "$SALI_KEY_PASSWORD" ]]; then
+            echo "Signing secrets incomplete -> only the clearly-labelled DEBUG apk is produced in this run."
+            exit 0
+          fi
+          printf '%s' "$SALI_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/sali.keystore"
+          ./gradlew --no-daemon assembleRelease \
+            -Pandroid.injected.signing.storeFile="$RUNNER_TEMP/sali.keystore" \
+            -Pandroid.injected.signing.storePassword="$SALI_KEYSTORE_PASSWORD" \
+            -Pandroid.injected.signing.keyAlias="$SALI_KEY_ALIAS" \
+            -Pandroid.injected.signing.keyPassword="$SALI_KEY_PASSWORD"
+          cp app/build/outputs/apk/release/app-release.apk dist/SaliBussiness-release.apk
+
+      - name: Checksums
+        run: cd dist && sha256sum *.apk > SHA256SUMS.txt
+
+      - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: sali-zzai-apk
-          path: Sali-ZZai.apk
-          retention-days: 30
+          name: SaliBussiness-APK-${{ github.sha }}
+          path: dist/
           if-no-files-found: error
-          compression-level: 6
+          retention-days: 60
 
-      - name: 🏷️ Create GitHub Release (on tag)
+      - name: Create GitHub Release on version tag
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: Sali-ZZai.apk
-          name: Release ${{ github.ref_name }}
+          name: SaliBussiness ${{ github.ref_name }}
           generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          files: |
+            dist/*.apk
+            dist/SHA256SUMS.txt
 
-      - name: 📊 Summary
-        if: always()
-        run: |
-          echo "## 📱 Sali-ZZai Native Android APK" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          if [ -f Sali-ZZai.apk ]; then
-            echo "✅ **APK built successfully**" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "**Download:** Artifacts → \`sali-zzai-apk\`" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
-            echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
-            echo "| Size | $(du -h Sali-ZZai.apk | cut -f1) |" >> $GITHUB_STEP_SUMMARY
-            echo "| Path | \`${{ steps.find_apk.outputs.path }}\` |" >> $GITHUB_STEP_SUMMARY
-            echo "| Branch | \`${{ github.ref_name }}\` |" >> $GITHUB_STEP_SUMMARY
-            echo "| Commit | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ **Build failed** — check logs above" >> $GITHUB_STEP_SUMMARY
-          fi
+      - name: Upload build diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-diagnostics
+          path: |
+            app/build/reports/
+            app/build/outputs/
+          if-no-files-found: ignore
+          retention-days: 14
