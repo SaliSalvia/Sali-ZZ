@@ -1,6 +1,5 @@
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
-import java.util.Properties
-import java.io.FileInputStream
+import java.io.File
 
 plugins {
     id("com.android.application")
@@ -63,7 +62,7 @@ android {
                 enableV3Signing = true   // APK Signature Scheme v3 (key rotation)
             }
         }
-        println("✅ Release signing config loaded from $keystoreFile")
+        println("✅ Release signing config loaded from $keystorePath")
     } else {
         println("⚠️  No release keystore found — falling back to debug signing")
     }
