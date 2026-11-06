@@ -42,7 +42,15 @@ jobs:
         run: chmod +x gradlew
 
       - name: Run unit tests
-        run: ./gradlew --no-daemon test
+        shell: bash
+        run: |
+          set +e
+          ./gradlew --no-daemon test --console=plain > /tmp/test.log 2>&1
+          code=$?
+          # Surface the actual compiler/test errors as check annotations
+          grep -E "^e: |error:|FAILED|Execution failed" /tmp/test.log | head -n 30 | while IFS= read -r l; do echo "::error::${l//%/%25}"; done
+          tail -n 50 /tmp/test.log >> "$GITHUB_STEP_SUMMARY"
+          exit $code
 
       # تا پاک‌سازی baseline، lint بلاک‌کننده نیست ولی گزارشش در artifact diagnostics هست.
       - name: Android lint (non-blocking until baseline is clean)
