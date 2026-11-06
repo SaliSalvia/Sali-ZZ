@@ -34,11 +34,10 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      # تا وقتی wrapper واقعی در ریپو commit نشده، از توزیع پین‌شده 8.9 تولید می‌کنیم.
-      # گام بعدی (فاز ۲): commit کردن gradlew + gradle-wrapper.jar + gradle-wrapper.properties
-      - name: Generate Gradle wrapper (pinned 8.9)
-        run: gradle wrapper --gradle-version 8.9 --distribution-type bin
-
+      # The pinned Gradle 8.9 wrapper (gradlew + wrapper jar + properties) is
+      # committed in the repo, so there is no need to regenerate it; doing so
+      # re-downloaded the distribution and intermittently failed the whole
+      # build before compilation even started.
       - name: Make wrapper executable
         run: chmod +x gradlew
 
