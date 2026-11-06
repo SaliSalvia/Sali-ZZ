@@ -38,18 +38,26 @@ android {
     //   SIGNING_KEY_PASSWORD      — key password
     //
     // Local dev (no env vars set) → uses debug key automatically.
-    val keystoreFile = System.getenv("SIGNING_KEYSTORE_FILE")
-    val keystorePass = System.getenv("SIGNING_KEYSTORE_PASSWORD")
-    val keyAlias     = System.getenv("SIGNING_KEY_ALIAS")
-    val keyPass      = System.getenv("SIGNING_KEY_PASSWORD")
+    // NOTE: do not write `java.io.File` fully-qualified in this script and do
+    // not name these vals like the SigningConfig properties: in Gradle Kotlin
+    // DSL `java` resolves to the Project's JavaPluginExtension (so
+    // `java.io.File` fails with "Unresolved reference: io"), and
+    // `keyAlias = keyAlias` inside create("release") self-assigns the outer
+    // val ("Val cannot be reassigned"). Both broke script compilation, i.e.
+    // EVERY Gradle task failed before any code was compiled.
+    val keystorePath = System.getenv("SIGNING_KEYSTORE_FILE")
+    val envStorePass = System.getenv("SIGNING_KEYSTORE_PASSWORD")
+    val envKeyAlias  = System.getenv("SIGNING_KEY_ALIAS")
+    val envKeyPass   = System.getenv("SIGNING_KEY_PASSWORD")
+    val hasReleaseKeystore = keystorePath != null && File(keystorePath).exists()
 
-    if (keystoreFile != null && java.io.File(keystoreFile).exists()) {
+    if (hasReleaseKeystore) {
         signingConfigs {
             create("release") {
-                storeFile = java.io.File(keystoreFile)
-                storePassword = keystorePass
-                keyAlias = keyAlias
-                keyPassword = keyPass
+                storeFile = File(keystorePath!!)
+                storePassword = envStorePass
+                keyAlias = envKeyAlias
+                keyPassword = envKeyPass
                 enableV1Signing = true
                 enableV2Signing = true
                 enableV3Signing = true   // APK Signature Scheme v3 (key rotation)
@@ -77,7 +85,7 @@ android {
                 "proguard-rules.pro"
             )
             // Use real release keystore if available, otherwise debug key
-            signingConfig = if (keystoreFile != null && java.io.File(keystoreFile).exists()) {
+            signingConfig = if (hasReleaseKeystore) {
                 signingConfigs.getByName("release")
             } else {
                 signingConfigs.getByName("debug")
