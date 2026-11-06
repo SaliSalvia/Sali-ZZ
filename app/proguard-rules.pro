@@ -35,8 +35,11 @@
 -keep class com.google.android.libraries.identity.googleid.** { *; }
 -dontwarn com.google.android.libraries.identity.googleid.**
 
-# EncryptedSharedPreferences
+# EncryptedSharedPreferences (+ Tink underneath: R8 stripping its
+# protobuf/registry classes caused release-only startup crashes)
 -keep class androidx.security.crypto.** { *; }
+-keep class com.google.crypto.tink.** { *; }
+-dontwarn com.google.crypto.tink.**
 -keep class com.google.android.gms.** { *; }
 -dontwarn com.google.android.gms.**
 

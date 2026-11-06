@@ -96,7 +96,18 @@ private fun LoadingScreen() {
 private fun MainAppNavigation(
     onLoggedOut: () -> Unit
 ) {
-    var currentTab by rememberSaveable { mutableStateOf<Tab>(Tab.Chat) }
+    // Save the route String, not the Tab object: Tab objects are not
+    // Serializable/Parcelable, so rememberSaveable<Tab> threw
+    // IllegalArgumentException ("cannot be saved") whenever the state was
+    // persisted (rotation, backgrounding, process recreation).
+    var currentTabRoute by rememberSaveable { mutableStateOf(Tab.Chat.route) }
+    val currentTab: Tab = when (currentTabRoute) {
+        Tab.History.route -> Tab.History
+        Tab.Discover.route -> Tab.Discover
+        Tab.ImageGen.route -> Tab.ImageGen
+        Tab.Settings.route -> Tab.Settings
+        else -> Tab.Chat
+    }
     var pendingConversationId by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
@@ -111,7 +122,7 @@ private fun MainAppNavigation(
                 ).forEach { tab ->
                     NavigationBarItem(
                         selected = currentTab.route == tab.route,
-                        onClick = { currentTab = tab },
+                        onClick = { currentTabRoute = tab.route },
                         icon = { Icon(tab.icon, contentDescription = tab.label) },
                         label = { Text(tab.label) },
                         colors = NavigationBarItemDefaults.colors(
@@ -129,18 +140,18 @@ private fun MainAppNavigation(
         when (currentTab) {
             is Tab.Chat -> ChatScreen(
                 conversationId = pendingConversationId,
-                onOpenHistory = { currentTab = Tab.History },
-                onOpenSettings = { currentTab = Tab.Settings },
+                onOpenHistory = { currentTabRoute = Tab.History.route },
+                onOpenSettings = { currentTabRoute = Tab.Settings.route },
                 modifier = Modifier.padding(padding)
             )
             is Tab.History -> HistoryScreen(
                 onOpenConversation = { id ->
                     pendingConversationId = id
-                    currentTab = Tab.Chat
+                    currentTabRoute = Tab.Chat.route
                 },
                 onNewChat = {
                     pendingConversationId = null
-                    currentTab = Tab.Chat
+                    currentTabRoute = Tab.Chat.route
                 },
                 modifier = Modifier.padding(padding)
             )

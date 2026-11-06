@@ -62,7 +62,35 @@ class SaliZZaiApp : Application() {
         authRepository = AuthRepository(this, database, userPrefs)
     }
 
+    private fun createSecurePrefs(): SharedPreferences {
+        fun build(): SharedPreferences {
+            val masterKey = MasterKey.Builder(this)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            return EncryptedSharedPreferences.create(
+                this,
+                SECURE_PREFS_NAME,
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+        }
+        return try {
+            build()
+        } catch (e: Exception) {
+            // Corrupted prefs file / stale key: delete and retry once.
+            try {
+                getSharedPreferences(SECURE_PREFS_NAME, MODE_PRIVATE).edit().clear().apply()
+                java.io.File(filesDir.parent, "shared_prefs/$SECURE_PREFS_NAME.xml").delete()
+                build()
+            } catch (e2: Exception) {
+                getSharedPreferences(SECURE_PREFS_NAME + "_fallback", MODE_PRIVATE)
+            }
+        }
+    }
+
     companion object {
+        private const val SECURE_PREFS_NAME = "sali_zzai_secure"
         private lateinit var instance: SaliZZaiApp
 
         fun get(): SaliZZaiApp = instance

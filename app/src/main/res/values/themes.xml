@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Main theme (Splash → App) -->
+    <!-- Main theme (post-splash app theme) -->
     <style name="Theme.SaliZZai" parent="android:Theme.Material.NoActionBar">
         <item name="android:windowBackground">@color/dark_background</item>
         <item name="android:statusBarColor">@color/dark_background</item>
@@ -9,10 +9,20 @@
         <item name="android:windowLightNavigationBar">false</item>
     </style>
 
-    <!-- Splash screen theme (purple with logo) — uses legacy android: theme
-         for compatibility. The in-app brand intro animation handles the modern look. -->
-    <style name="Theme.SaliZZai.Splash" parent="Theme.SaliZZai">
-        <item name="android:windowBackground">@drawable/splash_background</item>
+    <!-- Splash screen theme.
+         MUST descend from Theme.SplashScreen (core-splashscreen): MainActivity
+         calls installSplashScreen(), and with a plain android:Theme parent the
+         compat splash on Android 11- (and OEM skins such as MIUI/HyperOS) tried
+         to inflate the old windowBackground layer-list
+         (layer-list -> bitmap -> bitmap-alias -> PNG) while creating the very
+         first window, crashing the app instantly on tap before any UI showed.
+         The system splash now uses a plain colour + the logo drawable, and the
+         rich animated intro still runs in-app via BrandIntroScreen. -->
+    <style name="Theme.SaliZZai.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/splash_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_logo</item>
+        <item name="postSplashScreenTheme">@style/Theme.SaliZZai</item>
+        <item name="android:windowBackground">@color/splash_background</item>
         <item name="android:statusBarColor">@color/splash_background</item>
         <item name="android:navigationBarColor">@color/splash_background</item>
         <item name="android:windowLightStatusBar">false</item>
