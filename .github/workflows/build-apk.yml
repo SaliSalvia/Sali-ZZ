@@ -3,10 +3,12 @@ name: Build SaliBussiness APK
 on:
   workflow_dispatch:
   push:
-    branches: [ main, 'arena/**', 'copilot/**', 'fix/**' ]
+    # Default branch of this repo is `master` (a merge into it previously
+    # triggered no build at all because only `main` was listed here).
+    branches: [ main, master, 'arena/**', 'copilot/**', 'fix/**' ]
     tags: [ 'v*' ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, master ]
 
 permissions:
   contents: write
