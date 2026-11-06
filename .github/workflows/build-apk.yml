@@ -58,27 +58,30 @@ jobs:
           mkdir -p dist
           cp app/build/outputs/apk/debug/app-debug.apk dist/SaliBussiness-debug.apk
 
-      # APK امضاشده فقط وقتی ساخته می‌شود که «هر چهار» سیکرت تنظیم شده باشد.
-      # APK دیباگ هرگز به‌عنوان نسخه انتشار عرضه نمی‌شود.
-      - name: Build SIGNED release APK (only when all 4 signing secrets exist)
+      # Release is ALWAYS built (validates R8/minify). It is signed with the
+      # real keystore only when all 4 secrets exist; otherwise
+      # app/build.gradle.kts falls back to the debug key. The env var names
+      # below MUST match what build.gradle.kts reads (SIGNING_*); previously
+      # the workflow exported SALI_* names, so the release signing config in
+      # Gradle never saw them and the injected-signing -P props were ignored
+      # because build.gradle.kts pins signingConfig explicitly.
+      - name: Build release APK (signed when all 4 signing secrets exist)
         env:
           SALI_KEYSTORE_BASE64: ${{ secrets.SALI_KEYSTORE_BASE64 }}
-          SALI_KEYSTORE_PASSWORD: ${{ secrets.SALI_KEYSTORE_PASSWORD }}
-          SALI_KEY_ALIAS: ${{ secrets.SALI_KEY_ALIAS }}
-          SALI_KEY_PASSWORD: ${{ secrets.SALI_KEY_PASSWORD }}
+          SIGNING_KEYSTORE_PASSWORD: ${{ secrets.SALI_KEYSTORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SALI_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SALI_KEY_PASSWORD }}
         shell: bash
         run: |
           set -euo pipefail
-          if [[ -z "$SALI_KEYSTORE_BASE64" || -z "$SALI_KEYSTORE_PASSWORD" || -z "$SALI_KEY_ALIAS" || -z "$SALI_KEY_PASSWORD" ]]; then
-            echo "Signing secrets incomplete -> only the clearly-labelled DEBUG apk is produced in this run."
-            exit 0
+          if [[ -n "$SALI_KEYSTORE_BASE64" && -n "$SIGNING_KEYSTORE_PASSWORD" && -n "$SIGNING_KEY_ALIAS" && -n "$SIGNING_KEY_PASSWORD" ]]; then
+            printf '%s' "$SALI_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/sali.keystore"
+            echo "SIGNING_KEYSTORE_FILE=$RUNNER_TEMP/sali.keystore" >> "$GITHUB_ENV"
+            echo "Release will be signed with the repository keystore."
+          else
+            echo "Signing secrets incomplete -> release falls back to debug signing (see build.gradle.kts)."
           fi
-          printf '%s' "$SALI_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/sali.keystore"
-          ./gradlew --no-daemon assembleRelease \
-            -Pandroid.injected.signing.storeFile="$RUNNER_TEMP/sali.keystore" \
-            -Pandroid.injected.signing.storePassword="$SALI_KEYSTORE_PASSWORD" \
-            -Pandroid.injected.signing.keyAlias="$SALI_KEY_ALIAS" \
-            -Pandroid.injected.signing.keyPassword="$SALI_KEY_PASSWORD"
+          ./gradlew --no-daemon assembleRelease
           cp app/build/outputs/apk/release/app-release.apk dist/SaliBussiness-release.apk
 
       - name: Checksums
