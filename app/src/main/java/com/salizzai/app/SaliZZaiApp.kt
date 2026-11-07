@@ -22,34 +22,33 @@ class SaliZZaiApp : Application() {
     lateinit var userPrefs: UserPreferences
         private set
 
-    lateinit var zaiClient: ZaiApiClient
-        private set
-
-    lateinit var encryptedPrefs: SharedPreferences
-        private set
-
     lateinit var authRepository: AuthRepository
         private set
+
+    // Lazy: building EncryptedSharedPreferences does AndroidKeyStore IPC and
+    // file decryption on the calling thread, and creating the API client touches
+    // it. Both are therefore created on first real use (after the brand intro is
+    // already on screen) instead of blocking the first frame of a cold start.
+    val encryptedPrefs: SharedPreferences by lazy { createSecurePrefs() }
+
+    val zaiClient: ZaiApiClient by lazy { ZaiApiClient(encryptedPrefs, cacheDir) }
 
     override fun onCreate() {
         super.onCreate()
 
         instance = this
 
-        // Initialize encrypted preferences (for API key + sensitive data).
-        // Uses the self-healing builder below: a corrupt keystore entry used to
-        // crash the app on launch with no way to recover from the UI.
-        encryptedPrefs = createSecurePrefs()
+        // NOTE: encryptedPrefs / zaiClient are intentionally NOT touched here.
+        // They are lazy (see above) and must go through createSecurePrefs():
+        // creating EncryptedSharedPreferences directly used to crash
+        // Application.onCreate on HyperOS devices with a corrupted Keystore
+        // or prefs file restored from another phone, before any UI appeared.
 
         // Initialize Room database (local, no server)
         database = AppDatabase.getInstance(this)
 
         // Initialize user preferences
         userPrefs = UserPreferences(this)
-
-        // Initialize Z.ai API client (calls Z.ai directly, no proxy)
-        // Pass the device cache directory so OkHttp can cache HTTP responses.
-        zaiClient = ZaiApiClient(encryptedPrefs, cacheDir)
 
         // Initialize auth repository (handles email/password/OTP/Google sign-in)
         authRepository = AuthRepository(this, database, userPrefs)
