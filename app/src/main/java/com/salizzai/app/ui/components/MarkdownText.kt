@@ -54,6 +54,7 @@ fun MarkdownText(
                 textSize = 14f
                 setLineSpacing(2f, 1.2f)
                 Linkify.addLinks(this, Linkify.WEB_URLS)
+                tag = markdown
                 markwon.setMarkdown(this, markdown)
             }
         },
@@ -64,7 +65,14 @@ fun MarkdownText(
                 (onSurfaceColor.green * 255).toInt(),
                 (onSurfaceColor.blue * 255).toInt()
             ))
-            markwon.setMarkdown(tv, markdown)
+            // Performance: during token streaming every state change recomposes
+            // the whole chat list. Without this guard Markwon re-parsed the full
+            // markdown of EVERY visible message on every token — the main source
+            // of chat jank/CPU drain. Only re-parse when the text actually changed.
+            if (tv.tag != markdown) {
+                tv.tag = markdown
+                markwon.setMarkdown(tv, markdown)
+            }
         },
         modifier = modifier
     )
