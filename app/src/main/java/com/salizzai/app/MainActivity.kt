@@ -6,12 +6,11 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
-import androidx.compose.ui.Modifier
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.salizzai.app.ui.BrandIntroScreen
 import com.salizzai.app.ui.SaliZZaiAppNavigation
@@ -39,15 +38,31 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             SaliZZaiTheme {
-                var showBrandIntro by rememberSaveable { mutableStateOf(true) }
+                val app = SaliZZaiApp.get()
+                // The animated brand intro is a first-run experience only. Playing
+                // it on every cold start added ~2 s of perceived launch time.
+                var showBrandIntro by rememberSaveable {
+                    mutableStateOf(!app.encryptedPrefs.getBoolean(KEY_INTRO_SEEN, false))
+                }
                 Surface(modifier = Modifier.fillMaxSize()) {
                     if (showBrandIntro) {
-                        BrandIntroScreen(onFinished = { showBrandIntro = false })
+                        BrandIntroScreen(
+                            onFinished = {
+                                app.encryptedPrefs.edit()
+                                    .putBoolean(KEY_INTRO_SEEN, true)
+                                    .apply()
+                                showBrandIntro = false
+                            }
+                        )
                     } else {
                         SaliZZaiAppNavigation()
                     }
                 }
             }
         }
+    }
+
+    private companion object {
+        const val KEY_INTRO_SEEN = "intro_seen"
     }
 }

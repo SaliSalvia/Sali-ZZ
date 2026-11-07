@@ -20,6 +20,15 @@ import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -70,7 +79,7 @@ class HistoryViewModel : ViewModel() {
                     else convs.filter { it.title.contains(q, ignoreCase = true) }
                 }
             }
-            .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun updateQuery(q: String) { _query.value = q }
 
@@ -167,6 +176,8 @@ fun HistoryScreen(
                     }
                 }
                 items(conversations, key = { it.id }) { conv ->
+                    var menuOpen by remember(conv.id) { mutableStateOf(false) }
+                    var confirmDelete by remember(conv.id) { mutableStateOf(false) }
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -201,12 +212,23 @@ fun HistoryScreen(
                             }
                             Spacer(modifier = Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = conv.title,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    if (conv.pinned) {
+                                        Icon(
+                                            Icons.Filled.PushPin,
+                                            contentDescription = "سنجاق‌شده",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(13.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                    }
+                                    Text(
+                                        text = conv.title,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
                                 Text(
                                     text = dateFormatter.format(Date(conv.updatedAt)),
                                     style = MaterialTheme.typography.labelSmall,
@@ -214,7 +236,66 @@ fun HistoryScreen(
                                     modifier = Modifier.padding(top = 3.dp)
                                 )
                             }
+                            Box {
+                                IconButton(
+                                    onClick = { menuOpen = true },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Filled.MoreVert,
+                                        contentDescription = "گزینه‌ها",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                                DropdownMenu(
+                                    expanded = menuOpen,
+                                    onDismissRequest = { menuOpen = false }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text(if (conv.pinned) "برداشتن سنجاق" else "سنجاق به بالا") },
+                                        leadingIcon = {
+                                            Icon(Icons.Filled.PushPin, contentDescription = null)
+                                        },
+                                        onClick = {
+                                            viewModel.togglePin(conv.id, !conv.pinned)
+                                            menuOpen = false
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("حذف گفتگو", color = MaterialTheme.colorScheme.error) },
+                                        leadingIcon = {
+                                            Icon(
+                                                Icons.Filled.DeleteOutline,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.error
+                                            )
+                                        },
+                                        onClick = {
+                                            confirmDelete = true
+                                            menuOpen = false
+                                        }
+                                    )
+                                }
+                            }
                         }
+                    }
+
+                    if (confirmDelete) {
+                        AlertDialog(
+                            onDismissRequest = { confirmDelete = false },
+                            title = { Text("حذف گفتگو") },
+                            text = { Text("«${conv.title}» و همهٔ پیام‌های آن حذف شود؟") },
+                            confirmButton = {
+                                TextButton(onClick = {
+                                    viewModel.deleteConversation(conv.id)
+                                    confirmDelete = false
+                                }) { Text("حذف", color = MaterialTheme.colorScheme.error) }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { confirmDelete = false }) { Text("لغو") }
+                            }
+                        )
                     }
                 }
             }

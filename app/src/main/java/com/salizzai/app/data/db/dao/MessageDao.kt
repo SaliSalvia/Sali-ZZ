@@ -31,6 +31,15 @@ interface MessageDao {
     @Query("UPDATE messages SET content = content || :append WHERE id = :id")
     suspend fun appendContent(id: String, append: String)
 
+    @Query("UPDATE messages SET reasoning = reasoning || :append WHERE id = :id")
+    suspend fun appendReasoning(id: String, append: String)
+
+    @Query("UPDATE messages SET reasoningMs = :durationMs WHERE id = :id")
+    suspend fun setReasoningDuration(id: String, durationMs: Long)
+
+    @Query("UPDATE messages SET sources = :sources WHERE id = :id")
+    suspend fun setSources(id: String, sources: String?)
+
     @Query("UPDATE messages SET isError = :isError WHERE id = :id")
     suspend fun markError(id: String, isError: Boolean)
 
@@ -39,6 +48,9 @@ interface MessageDao {
 
     @Query("DELETE FROM messages WHERE id = :id")
     suspend fun deleteById(id: String)
+
+    @Query("DELETE FROM messages WHERE conversationId = :conversationId")
+    suspend fun deleteForConversation(conversationId: String)
 
     @Query("SELECT COUNT(*) FROM messages WHERE conversationId = :conversationId")
     suspend fun countForConversation(conversationId: String): Int

@@ -11,7 +11,7 @@ import kotlinx.serialization.Serializable
  * @param images Optional list of base64-encoded data URLs (`data:image/...;base64,...`)
  *               attached to this message. When non-empty, the request body builder turns
  *               `content` into a multimodal array (text + image_url parts) so that
- *               vision-capable models (e.g. GLM-4V) can read the images.
+ *               vision-capable models (GLM-5.3-Flash, GLM-5V, …) can read the images.
  */
 @Serializable
 data class ChatMessage(
@@ -20,19 +20,47 @@ data class ChatMessage(
     val images: List<String> = emptyList()
 )
 
+/**
+ * How hard the model should think before answering.
+ *
+ * GLM-5.3 and GLM-5.3-Flash can no longer disable reasoning — they accept only
+ * `thinking.type = "enabled"` and let the caller pick the depth through
+ * `reasoning_effort`. Sending `"disabled"` to those models makes the request fail,
+ * so the client must translate [ReasoningEffort] into the right pair of fields.
+ */
+enum class ReasoningEffort(val apiValue: String, val label: String, val description: String) {
+    LOW("low", "سریع", "تفکر سبک — پاسخ سریع‌تر، مناسب پرسش‌های ساده"),
+    HIGH("high", "متعادل", "تفکر پیشرفته — تعادل خوب بین سرعت و دقت"),
+    MAX("max", "عمیق", "تفکر عمیق — بیشترین دقت، مناسب کدنویسی و تحلیل سنگین");
+
+    companion object {
+        fun from(value: String?): ReasoningEffort =
+            entries.firstOrNull { it.apiValue.equals(value, ignoreCase = true) } ?: MAX
+
+        /** Values offered by the UI, deepest last. */
+        val SELECTABLE = listOf(LOW, HIGH, MAX)
+    }
+}
+
 @Serializable
 data class ChatCompletionRequest(
     val model: String = AvailableModels.DEFAULT_MODEL,
     val messages: List<ChatMessage>,
-    @SerialName("thinking")
     val thinking: ThinkingConfig? = null,
     val temperature: Double? = null,
+    @SerialName("top_p")
+    val topP: Double? = null,
+    @SerialName("max_tokens")
+    val maxTokens: Int? = null,
     val stream: Boolean = true
 )
 
 @Serializable
 data class ThinkingConfig(
-    val type: String = "disabled" // "disabled" | "enabled"
+    val type: String = "disabled", // "disabled" | "enabled"
+    /** Keep prior turns' reasoning in context (GLM-5.3 family recommends `false`). */
+    @SerialName("clear_thinking")
+    val clearThinking: Boolean? = null
 )
 
 // ─── API response models ────────────────────────────────────────────
@@ -63,7 +91,9 @@ data class ChoiceMessage(
 @Serializable
 data class Delta(
     val role: String? = null,
-    val content: String? = null
+    val content: String? = null,
+    @SerialName("reasoning_content")
+    val reasoningContent: String? = null
 )
 
 @Serializable
@@ -78,11 +108,30 @@ data class Usage(
 
 // ─── Image generation ───────────────────────────────────────────────
 
+/** Image models exposed by `POST /images/generations`. */
+object ImageModels {
+    const val GLM_IMAGE = "glm-image"
+    const val COGVIEW_4 = "cogview-4-250304"
+
+    data class Option(val id: String, val label: String, val description: String)
+
+    val ALL = listOf(
+        Option(GLM_IMAGE, "GLM-Image", "جدیدترین مدل تصویر — رندر متن و جزئیات بهتر"),
+        Option(COGVIEW_4, "CogView-4", "مدل تصویر کلاسیک — سریع و سبک")
+    )
+
+    /** Sizes accepted by both models (GLM-Image recommends 1280x1280). */
+    val SIZES = listOf(
+        "1280x1280", "1024x1024", "1344x768", "768x1344", "1152x864", "864x1152"
+    )
+}
+
 @Serializable
 data class ImageGenerationRequest(
     val prompt: String,
-    val size: String = "1024x1024",
-    val model: String? = null
+    val size: String = "1280x1280",
+    val model: String? = ImageModels.GLM_IMAGE,
+    val quality: String? = null
 )
 
 @Serializable
@@ -99,17 +148,24 @@ data class ImageData(
 
 // ─── Web search ─────────────────────────────────────────────────────
 
+/**
+ * One hit from `POST /web_search` (`search_result[]`).
+ *
+ * Field names follow the upstream JSON (`link`, `media`, `content`, …) but keep
+ * the friendlier aliases the UI already used.
+ */
 @Serializable
 data class WebSearchResult(
-    val url: String,
-    val name: String,
-    val snippet: String = "",
-    @SerialName("host_name")
-    val hostName: String = "",
-    val rank: Int = 0,
-    val date: String = "",
-    val favicon: String = ""
-)
+    @SerialName("link") val url: String = "",
+    @SerialName("title") val name: String = "",
+    @SerialName("content") val snippet: String = "",
+    @SerialName("media") val hostName: String = "",
+    @SerialName("refer") val refer: String = "",
+    @SerialName("publish_date") val date: String = "",
+    @SerialName("icon") val favicon: String = ""
+) {
+    val rank: Int get() = refer.toIntOrNull() ?: 0
+}
 
 // ─── Available models ───────────────────────────────────────────────
 
@@ -117,13 +173,24 @@ data class ZaiModel(
     val id: String,
     val displayName: String,
     val description: String,
+    /** Model returns a `reasoning_content` stream. */
     val supportsThinking: Boolean = false,
+    /** Reasoning cannot be turned off (GLM-5.3 / GLM-5.3-Flash). */
+    val requiresThinking: Boolean = false,
     val supportsVision: Boolean = false,
+    val supportsVideo: Boolean = false,
+    /** Accepts `{"type":"file"}` content blocks (GLM-5.3-Flash family). */
+    val supportsFile: Boolean = false,
     val badge: String? = null,
     val contextWindow: Int = 128_000,
     /** Models the user can chat with for free on chat.z.ai / the free tier. */
-    val isFreeTier: Boolean = false
-)
+    val isFreeTier: Boolean = false,
+    /** Older GLM-4.x generation, kept for backwards compatibility. */
+    val legacy: Boolean = false
+) {
+    /** Whether the UI may let the user switch reasoning off entirely. */
+    val canToggleThinking: Boolean get() = supportsThinking && !requiresThinking
+}
 
 /**
  * Built-in model catalogue used before (and alongside) the live list returned by
@@ -138,6 +205,9 @@ object AvailableModels {
     /** Default model — free on chat.z.ai and the most capable model of the GLM-5 line. */
     const val DEFAULT_MODEL = "glm-5.3"
 
+    /** Vision-capable model used automatically when images are attached. */
+    const val VISION_MODEL = "glm-5.3-flash"
+
     /** Preference order: free GLM-5 models first, then fallbacks. */
     val PRIORITY: List<String> = listOf(
         "glm-5.3",
@@ -148,16 +218,17 @@ object AvailableModels {
         "glm-4.7-flash",
         "glm-4.6",
         "glm-4.5",
-        "glm-4.5-flash"
+        "glm-4.5-flash",
+        "glm-4.5v"
     )
 
     val ALL: List<ZaiModel> = listOf(
         ZaiModel(
             id = "glm-5.3",
             displayName = "GLM-5.3",
-            description = "پرچم‌دار Z.ai — کدنویسی، استدلال و عامل‌های هوشمند",
+            description = "پرچم‌دار Z.ai — کدنویسی، استدلال و عامل‌های هوشمند (متنی)",
             supportsThinking = true,
-            supportsVision = true,
+            requiresThinking = true,
             badge = "رایگان",
             contextWindow = 1_000_000,
             isFreeTier = true
@@ -167,7 +238,6 @@ object AvailableModels {
             displayName = "GLM-5.2",
             description = "نسل قبل پرچم‌دار — پایدار با پنجرهٔ یک‌میلیونی",
             supportsThinking = true,
-            supportsVision = true,
             badge = "رایگان",
             contextWindow = 1_000_000,
             isFreeTier = true
@@ -175,9 +245,12 @@ object AvailableModels {
         ZaiModel(
             id = "glm-5.3-flash",
             displayName = "GLM-5.3 Flash",
-            description = "چندوجهی و فوق سریع — سبک‌ترین مدل نسل ۵",
+            description = "چندوجهی و فوق سریع — تصویر، ویدیو و فایل",
             supportsThinking = true,
+            requiresThinking = true,
             supportsVision = true,
+            supportsVideo = true,
+            supportsFile = true,
             badge = "رایگان",
             contextWindow = 1_000_000,
             isFreeTier = true
@@ -187,7 +260,10 @@ object AvailableModels {
             displayName = "GLM-5.3 FlashX",
             description = "نسخهٔ پرسرعت Flash با خروجی تا ۲۰۰ توکن بر ثانیه",
             supportsThinking = true,
+            requiresThinking = true,
             supportsVision = true,
+            supportsVideo = true,
+            supportsFile = true,
             badge = "سریع",
             contextWindow = 1_000_000
         ),
@@ -196,6 +272,7 @@ object AvailableModels {
             displayName = "GLM-5V Turbo",
             description = "درک تصویر و ویدیو با سرعت بالا",
             supportsVision = true,
+            supportsVideo = true,
             badge = "بینایی",
             contextWindow = 200_000
         ),
@@ -203,17 +280,19 @@ object AvailableModels {
             id = "glm-4.7-flash",
             displayName = "GLM-4.7 Flash",
             description = "رایگان روی API — پاسخ‌های سریع و سبک",
+            supportsThinking = true,
             badge = "رایگان",
             contextWindow = 128_000,
-            isFreeTier = true
+            isFreeTier = true,
+            legacy = true
         ),
         ZaiModel(
             id = "glm-4.6",
             displayName = "GLM-4.6",
             description = "مدل نسل قبل — سازگار با کلیدهای قدیمی‌تر",
             supportsThinking = true,
-            supportsVision = true,
-            contextWindow = 200_000
+            contextWindow = 200_000,
+            legacy = true
         ),
         ZaiModel(
             id = "glm-4.5v",
@@ -221,14 +300,16 @@ object AvailableModels {
             description = "نسخهٔ بینایی — درک تصویر و سند",
             supportsVision = true,
             badge = "بینایی",
-            contextWindow = 64_000
+            contextWindow = 64_000,
+            legacy = true
         ),
         ZaiModel(
             id = "glm-4.5",
             displayName = "GLM-4.5",
             description = "نسخهٔ پایدار قبلی",
             supportsThinking = true,
-            contextWindow = 128_000
+            contextWindow = 128_000,
+            legacy = true
         ),
         ZaiModel(
             id = "glm-4.5-flash",
@@ -236,7 +317,8 @@ object AvailableModels {
             description = "رایگان روی API — مناسب کاربردهای ساده",
             badge = "رایگان",
             contextWindow = 128_000,
-            isFreeTier = true
+            isFreeTier = true,
+            legacy = true
         )
     )
 
@@ -248,6 +330,11 @@ object AvailableModels {
         ALL.firstOrNull { it.id.equals(id, ignoreCase = true) }
 
     fun displayName(id: String): String = byId(id)?.displayName ?: id
+
+    /** True when the model exists in the catalogue and cannot disable reasoning. */
+    fun requiresThinking(id: String): Boolean = byId(id)?.requiresThinking == true
+
+    fun supportsVision(id: String): Boolean = byId(id)?.supportsVision == true
 
     /**
      * Full picker list: known models in preference order, followed by any extra
@@ -281,6 +368,12 @@ object AvailableModels {
     }
 
     /**
+     * Models worth showing as "recommended" in the picker: free GLM-5 family first.
+     */
+    fun recommended(remoteIds: Set<String> = emptySet()): List<ZaiModel> =
+        catalog(remoteIds).filter { it.isFreeTier && !it.legacy }
+
+    /**
      * Returns the best usable model id from a live model list, falling back to
      * the preferred order. Returns `null` when the list is empty.
      */
@@ -292,11 +385,21 @@ object AvailableModels {
         return normalized.first()
     }
 
-    /** Pick the right model for vision input. */
+    /**
+     * Picks the right model for vision input. GLM-5.3 / 5.2 are text-only, so an
+     * image needs either the current model (if it can see) or GLM-5.3-Flash.
+     */
     fun pickForVision(currentModelId: String): String {
         val current = byId(currentModelId)
         if (current?.supportsVision == true) return current.id
-        return "glm-5.3-flash"
+        return VISION_MODEL
+    }
+
+    /** Models that can accept attached documents/files directly. */
+    fun pickForFile(currentModelId: String): String {
+        val current = byId(currentModelId)
+        if (current?.supportsFile == true) return current.id
+        return VISION_MODEL
     }
 }
 

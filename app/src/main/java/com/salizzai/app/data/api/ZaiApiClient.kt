@@ -2,6 +2,13 @@ package com.salizzai.app.data.api
 
 import android.content.SharedPreferences
 import android.util.Base64
+import com.salizzai.app.data.model.AvailableModels
+import com.salizzai.app.data.model.ChatCompletionRequest
+import com.salizzai.app.data.model.ImageGenerationRequest
+import com.salizzai.app.data.model.ImageGenerationResponse
+import com.salizzai.app.data.model.ImageModels
+import com.salizzai.app.data.model.ReasoningEffort
+import com.salizzai.app.data.model.WebSearchResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -29,23 +36,19 @@ import okhttp3.Response
 import okhttp3.sse.EventSource
 import okhttp3.sse.EventSourceListener
 import okhttp3.sse.EventSources
-import com.salizzai.app.data.model.AvailableModels
-import com.salizzai.app.data.model.ChatCompletionRequest
-import com.salizzai.app.data.model.ImageGenerationRequest
-import com.salizzai.app.data.model.ImageGenerationResponse
-import com.salizzai.app.data.model.WebSearchResult
 import java.io.File
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 /**
  * Z.ai API client — makes direct HTTPS calls to https://api.z.ai.
  *
- * Supported endpoints:
- *  - `POST /chat/completions` (streaming + non-streaming, text + image attachments → VLM)
- *  - `POST /images/generations`
- *  - `POST /functions/web_search`
- *  - `POST /audio/speech`           (TTS, returns MP3 bytes)
- *  - `POST /audio/transcriptions`   (ASR, accepts audio file → returns text)
+ * Supported endpoints (all under `{base}` = https://api.z.ai/api/paas/v4):
+ *  - `GET  /models`                 key validation + live model discovery
+ *  - `POST /chat/completions`       streaming + non-streaming, text + image + file parts
+ *  - `POST /web_search`             LLM-oriented web search (`search-prime`)
+ *  - `POST /images/generations`     GLM-Image / CogView-4
+ *  - `POST /audio/transcriptions`   GLM-ASR-2512
  *
  * No server/proxy needed; calls Z.ai from the device itself.
  */
@@ -310,6 +313,12 @@ class ZaiApiClient(
         }
     }
 
+    /**
+     * One-token chat probe used when `/models` is not served.
+     *
+     * GLM-5.3 / GLM-5.3-Flash reject `thinking.type = "disabled"`, so the probe
+     * body is built with the same model-aware thinking logic as real requests.
+     */
     private fun probeChat(base: String, key: String, model: String): ProbeResult {
         val body = buildJsonObject {
             put("model", model)
@@ -322,7 +331,8 @@ class ZaiApiClient(
             put("stream", false)
             put("max_tokens", 1)
             put("temperature", 0.0)
-            put("thinking", buildJsonObject { put("type", "disabled") })
+            put("request_id", UUID.randomUUID().toString())
+            applyThinking(this, model, ReasoningEffort.LOW, thinkingEnabled = false)
         }.toString()
 
         val request = Request.Builder()
@@ -330,7 +340,7 @@ class ZaiApiClient(
             .header("Authorization", "Bearer $key")
             .header("X-Z-AI-From", "Z")
             .header("Accept", "application/json")
-            .post(body.toRequestBody("application/json".toMediaType()))
+            .post(body.toRequestBody(JSON_MEDIA))
             .build()
 
         probeClient.newCall(request).execute().use { response ->
@@ -373,6 +383,9 @@ class ZaiApiClient(
         if (error is JsonObject) {
             error["message"]?.jsonPrimitive?.contentOrNull?.let { if (it.isNotBlank()) return it }
         }
+        if (error != null) {
+            error.jsonPrimitive.contentOrNull?.let { if (it.isNotBlank()) return it }
+        }
         return parsed["message"]?.jsonPrimitive?.contentOrNull
     }
 
@@ -411,7 +424,9 @@ class ZaiApiClient(
      * (text + image_url) to enable vision (VLM) input on models that support it.
      */
     fun streamChatCompletion(
-        request: ChatCompletionRequest
+        request: ChatCompletionRequest,
+        reasoningEffort: ReasoningEffort = ReasoningEffort.MAX,
+        thinkingEnabled: Boolean = true
     ): Flow<StreamEvent> = callbackFlow {
         if (!hasCredentials()) {
             trySend(StreamEvent.Error("Z.ai API Key تنظیم نشده. به تنظیمات برو."))
@@ -419,19 +434,22 @@ class ZaiApiClient(
             return@callbackFlow
         }
 
-        val requestBody = buildChatRequestBody(request)
+        val requestBody = buildChatRequestBody(request, reasoningEffort, thinkingEnabled)
         val httpRequest = Request.Builder()
             .url("${getBaseUrl()}/chat/completions")
             .apply {
                 buildAuthHeaders().forEach { (k, v) -> header(k, v) }
             }
-            .post(requestBody.toRequestBody("application/json".toMediaType()))
+            .post(requestBody.toRequestBody(JSON_MEDIA))
             .build()
 
         val eventSource = eventSourceFactory.newEventSource(httpRequest, object : EventSourceListener() {
+            private var receivedAny = false
+
             override fun onOpen(eventSource: EventSource, response: Response) {
                 if (!response.isSuccessful) {
-                    trySend(StreamEvent.Error("خطای HTTP ${response.code}: ${response.message}"))
+                    val body = runCatching { response.body?.string() }.getOrNull().orEmpty()
+                    trySend(StreamEvent.Error(httpErrorMessage(response.code, body)))
                     eventSource.cancel()
                     return
                 }
@@ -443,31 +461,42 @@ class ZaiApiClient(
                     trySend(StreamEvent.Done)
                     return
                 }
-                try {
-                    val parsed = json.parseToJsonElement(data) as JsonObject
-                    // Some Z.ai responses embed reasoning_content separately from content.
-                    val delta = extractDelta(parsed)
-                    val reasoning = extractReasoning(parsed)
-                    if (delta != null) {
-                        trySend(StreamEvent.Delta(delta))
-                    }
-                    if (reasoning != null) {
-                        trySend(StreamEvent.Reasoning(reasoning))
-                    }
-                } catch (e: Exception) {
-                    // ignore malformed JSON
+                val parsed = runCatching { json.parseToJsonElement(data) as JsonObject }.getOrNull() ?: return
+                // Z.ai reports mid-stream failures inside the event payload.
+                if (parsed["error"] != null) {
+                    val message = readErrorMessage(data) ?: "خطای Z.ai در میانهٔ پاسخ"
+                    trySend(StreamEvent.Error(message))
+                    return
                 }
+                val reasoning = extractReasoning(parsed)
+                if (!reasoning.isNullOrEmpty()) {
+                    receivedAny = true
+                    trySend(StreamEvent.Reasoning(reasoning))
+                }
+                val delta = extractDelta(parsed)
+                if (!delta.isNullOrEmpty()) {
+                    receivedAny = true
+                    trySend(StreamEvent.Delta(delta))
+                }
+                extractUsage(parsed)?.let { trySend(StreamEvent.Usage(it)) }
+                extractFinishReason(parsed)?.let { trySend(StreamEvent.Finished(it)) }
             }
 
             override fun onClosed(eventSource: EventSource) {
+                if (!receivedAny) {
+                    trySend(StreamEvent.Error("پاسخ خالی از Z.ai دریافت شد."))
+                }
                 trySend(StreamEvent.Done)
                 channel.close()
             }
 
             override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
                 val errorMsg = when {
-                    response != null && response.code != 200 ->
-                        "خطای سرور Z.ai (${response.code})"
+                    response != null && !response.isSuccessful -> {
+                        val body = runCatching { response.body?.string() }.getOrNull().orEmpty()
+                        httpErrorMessage(response.code, body)
+                    }
+                    t is java.io.IOException -> "اتصال قطع شد: ${t.message ?: "خطای شبکه"}"
                     t != null -> t.message ?: "خطای شبکه"
                     else -> "خطای ناشناخته"
                 }
@@ -482,17 +511,29 @@ class ZaiApiClient(
     }.flowOn(Dispatchers.IO)
 
     private fun extractDelta(parsed: JsonObject): String? {
-        val choicesArr = parsed["choices"]?.let { it as? JsonArray }
-        val firstChoice = choicesArr?.firstOrNull()?.let { it as? JsonObject }
-        val delta = firstChoice?.get("delta")?.let { it as? JsonObject }
-        return delta?.get("content")?.jsonPrimitive?.contentOrNull
+        val choicesArr = parsed["choices"] as? JsonArray ?: return null
+        val firstChoice = choicesArr.firstOrNull() as? JsonObject ?: return null
+        val delta = firstChoice["delta"] as? JsonObject ?: return null
+        return delta["content"]?.jsonPrimitive?.contentOrNull
     }
 
     private fun extractReasoning(parsed: JsonObject): String? {
-        val choicesArr = parsed["choices"]?.let { it as? JsonArray }
-        val firstChoice = choicesArr?.firstOrNull()?.let { it as? JsonObject }
-        val delta = firstChoice?.get("delta")?.let { it as? JsonObject }
-        return delta?.get("reasoning_content")?.jsonPrimitive?.contentOrNull
+        val choicesArr = parsed["choices"] as? JsonArray ?: return null
+        val firstChoice = choicesArr.firstOrNull() as? JsonObject ?: return null
+        val delta = firstChoice["delta"] as? JsonObject ?: return null
+        return delta["reasoning_content"]?.jsonPrimitive?.contentOrNull
+    }
+
+    private fun extractFinishReason(parsed: JsonObject): String? {
+        val choicesArr = parsed["choices"] as? JsonArray ?: return null
+        val firstChoice = choicesArr.firstOrNull() as? JsonObject ?: return null
+        return firstChoice["finish_reason"]?.jsonPrimitive?.contentOrNull
+    }
+
+    private fun extractUsage(parsed: JsonObject): Int? {
+        val usage = parsed["usage"] as? JsonObject ?: return null
+        val total = usage["total_tokens"]?.jsonPrimitive?.intOrNull
+        return total?.takeIf { it > 0 }
     }
 
     /**
@@ -500,14 +541,21 @@ class ZaiApiClient(
      * the message's `content` becomes a list of typed parts (text + image_url),
      * which is the OpenAI-compatible multimodal format Z.ai expects for VLM models.
      */
-    private fun buildChatRequestBody(request: ChatCompletionRequest): String {
+    private fun buildChatRequestBody(
+        request: ChatCompletionRequest,
+        effort: ReasoningEffort,
+        thinkingEnabled: Boolean
+    ): String {
         return buildJsonObject {
             put("model", request.model)
             put("stream", request.stream)
-            put("thinking", buildJsonObject {
-                put("type", request.thinking?.type ?: "disabled")
-            })
-            request.temperature?.let { put("temperature", it) }
+            applyThinking(this, request.model, effort, thinkingEnabled)
+            // Z.ai accepts temperature in [0, 1]; clamp so a stale stored value
+            // (the old UI allowed up to 2.0) cannot turn into a 400.
+            request.temperature?.let { put("temperature", it.coerceIn(0.0, 1.0)) }
+            request.topP?.let { put("top_p", it.coerceIn(0.01, 1.0)) }
+            request.maxTokens?.let { put("max_tokens", it.coerceIn(1, 131_072)) }
+            put("request_id", UUID.randomUUID().toString())
             putJsonArray("messages") {
                 request.messages.forEach { msg ->
                     addJsonObject {
@@ -515,20 +563,20 @@ class ZaiApiClient(
                         if (msg.images.isEmpty()) {
                             put("content", msg.content)
                         } else {
-                            // Multimodal content: text followed by image parts
+                            // Multimodal content: images first, then the text prompt.
                             putJsonArray("content") {
-                                if (msg.content.isNotBlank()) {
-                                    addJsonObject {
-                                        put("type", "text")
-                                        put("text", msg.content)
-                                    }
-                                }
                                 msg.images.forEach { imagePart ->
                                     addJsonObject {
                                         put("type", "image_url")
                                         putJsonObject("image_url") {
                                             put("url", imagePart)
                                         }
+                                    }
+                                }
+                                if (msg.content.isNotBlank()) {
+                                    addJsonObject {
+                                        put("type", "text")
+                                        put("text", msg.content)
                                     }
                                 }
                             }
@@ -539,144 +587,164 @@ class ZaiApiClient(
         }.toString()
     }
 
-    // ─── Image generation ───────────────────────────────────────────────
+    /**
+     * Writes the model-appropriate thinking configuration.
+     *
+     * - GLM-5.3 / GLM-5.3-Flash: reasoning can never be turned off, so we always
+     *   send `enabled` and express the depth with `reasoning_effort`. Sending
+     *   `disabled` here is a hard error on Z.ai.
+     * - GLM-5.2 / 5.1 / 5 / 4.6 / 4.7: hybrid, so the user's toggle decides.
+     * - Non-reasoning models (e.g. GLM-4.5V): omit the fields entirely.
+     */
+    private fun applyThinking(
+        obj: kotlinx.serialization.json.JsonObjectBuilder,
+        modelId: String,
+        effort: ReasoningEffort,
+        thinkingEnabled: Boolean
+    ) {
+        val model = AvailableModels.byId(modelId)
+        val supportsThinking = model?.supportsThinking ?: true
+        val requiresThinking = model?.requiresThinking ?: false
 
-    suspend fun generateImage(request: ImageGenerationRequest): Result<ImageGenerationResponse> {
-        if (!hasCredentials()) {
-            return Result.failure(IllegalStateException("Z.ai API Key تنظیم نشده"))
-        }
-        return runCatching {
-            val body = buildJsonObject {
-                put("prompt", request.prompt)
-                put("size", request.size)
-                request.model?.let { put("model", it) }
-            }.toString()
-
-            val httpRequest = Request.Builder()
-                .url("${getBaseUrl()}/images/generations")
-                .apply {
-                    buildAuthHeaders().forEach { (k, v) -> header(k, v) }
-                }
-                .post(body.toRequestBody("application/json".toMediaType()))
-                .build()
-
-            httpClient.newCall(httpRequest).execute().use { response ->
-                if (!response.isSuccessful) {
-                    val errBody = response.body?.string() ?: ""
-                    throw RuntimeException("HTTP ${response.code}: $errBody")
-                }
-                val responseBody = response.body?.string()
-                    ?: throw RuntimeException("Empty response body")
-                json.decodeFromString(ImageGenerationResponse.serializer(), responseBody)
+        when {
+            requiresThinking || (supportsThinking && thinkingEnabled) -> {
+                obj.put("thinking", buildJsonObject {
+                    put("type", "enabled")
+                    // GLM-5.3 family recommends NOT replaying stale reasoning blocks.
+                    put("clear_thinking", false)
+                })
+                obj.put("reasoning_effort", effort.apiValue)
             }
+            supportsThinking -> {
+                obj.put("thinking", buildJsonObject { put("type", "disabled") })
+            }
+            else -> Unit // model has no reasoning at all
         }
     }
 
     // ─── Web search ────────────────────────────────────────────────────
 
-    suspend fun webSearch(query: String, num: Int = 5): Result<List<WebSearchResult>> {
+    /**
+     * Research-oriented web search (`POST /web_search`, engine `search-prime`).
+     *
+     * Returns the raw hits so the chat layer can quote them as sources and feed
+     * the summaries to GLM as grounding context — the same flow chat.z.ai uses
+     * for its web-search toggle.
+     */
+    suspend fun webSearch(
+        query: String,
+        count: Int = 8,
+        recency: String? = null
+    ): Result<List<WebSearchResult>> {
         if (!hasCredentials()) {
             return Result.failure(IllegalStateException("Z.ai API Key تنظیم نشده"))
         }
         return runCatching {
             val body = buildJsonObject {
-                put("query", query)
-                put("num", num)
+                put("search_engine", "search-prime")
+                put("search_query", query)
+                put("count", count.coerceIn(1, 50))
+                recency?.let { put("search_recency_filter", it) }
+                put("request_id", UUID.randomUUID().toString())
             }.toString()
 
             val httpRequest = Request.Builder()
-                .url("${getBaseUrl()}/functions/web_search")
-                .apply {
-                    buildAuthHeaders().forEach { (k, v) -> header(k, v) }
-                }
-                .post(body.toRequestBody("application/json".toMediaType()))
+                .url("${getBaseUrl()}/web_search")
+                .apply { buildAuthHeaders().forEach { (k, v) -> header(k, v) } }
+                .header("Accept-Language", "fa-IR,fa;q=0.9,en;q=0.6")
+                .post(body.toRequestBody(JSON_MEDIA))
                 .build()
 
             httpClient.newCall(httpRequest).execute().use { response ->
+                val responseBody = response.body?.string().orEmpty()
                 if (!response.isSuccessful) {
-                    val errBody = response.body?.string() ?: ""
-                    throw RuntimeException("HTTP ${response.code}: $errBody")
+                    throw RuntimeException(httpErrorMessage(response.code, responseBody))
                 }
-                val responseBody = response.body?.string()
-                    ?: throw RuntimeException("Empty response body")
                 val parsed = json.parseToJsonElement(responseBody)
                 val arr: JsonArray = when (parsed) {
                     is JsonArray -> parsed
-                    is JsonObject -> (parsed["results"] as? JsonArray) ?: JsonArray(emptyList())
+                    is JsonObject -> (parsed["search_result"] as? JsonArray)
+                        ?: (parsed["results"] as? JsonArray)
+                        ?: JsonArray(emptyList())
                     else -> JsonArray(emptyList())
                 }
                 arr.mapNotNull { el ->
-                    (el as? JsonObject)?.let { obj ->
-                        WebSearchResult(
-                            url = obj["url"]?.jsonPrimitive?.contentOrNull ?: "",
-                            name = obj["name"]?.jsonPrimitive?.contentOrNull ?: "",
-                            snippet = obj["snippet"]?.jsonPrimitive?.contentOrNull ?: "",
-                            hostName = obj["host_name"]?.jsonPrimitive?.contentOrNull ?: "",
-                            rank = obj["rank"]?.jsonPrimitive?.intOrNull ?: 0,
-                            date = obj["date"]?.jsonPrimitive?.contentOrNull ?: "",
-                            favicon = obj["favicon"]?.jsonPrimitive?.contentOrNull ?: ""
-                        )
-                    }
-                }
+                    val obj = el as? JsonObject ?: return@mapNotNull null
+                    fun str(vararg keys: String): String =
+                        keys.firstNotNullOfOrNull { k -> obj[k]?.jsonPrimitive?.contentOrNull } ?: ""
+                    WebSearchResult(
+                        url = str("link", "url"),
+                        name = str("title", "name"),
+                        snippet = str("content", "snippet"),
+                        hostName = str("media", "host_name").ifBlank {
+                            str("link", "url").removePrefix("https://").removePrefix("http://")
+                                .substringBefore('/')
+                        },
+                        refer = str("refer"),
+                        date = str("publish_date", "date"),
+                        favicon = str("icon", "favicon")
+                    )
+                }.filter { it.url.isNotBlank() }
             }
         }
     }
 
-    // ─── Text-to-Speech (TTS) ──────────────────────────────────────────
+    // ─── Image generation ──────────────────────────────────────────────
 
     /**
-     * Synthesizes audio for [text] using Z.ai's `/audio/speech` endpoint.
-     * Returns the raw audio bytes (typically MP3). Caller is responsible for caching.
+     * Generates one image. `model` is required by the API (`glm-image` or
+     * `cogview-4-250304`), so a sensible default is always sent.
      */
-    suspend fun synthesizeSpeech(
-        text: String,
-        voice: String = "default",
-        format: String = "mp3"
-    ): Result<ByteArray> {
+    suspend fun generateImage(request: ImageGenerationRequest): Result<ImageGenerationResponse> {
         if (!hasCredentials()) {
             return Result.failure(IllegalStateException("Z.ai API Key تنظیم نشده"))
         }
         return runCatching {
+            val modelId = request.model ?: ImageModels.GLM_IMAGE
             val body = buildJsonObject {
-                put("input", text)
-                put("voice", voice)
-                put("response_format", format)
+                put("model", modelId)
+                put("prompt", request.prompt)
+                put("size", request.size)
+                put("quality", request.quality ?: if (modelId == ImageModels.GLM_IMAGE) "hd" else "standard")
+                put("request_id", UUID.randomUUID().toString())
             }.toString()
 
             val httpRequest = Request.Builder()
-                .url("${getBaseUrl()}/audio/speech")
-                .apply {
-                    buildAuthHeaders().forEach { (k, v) -> header(k, v) }
-                }
-                .post(body.toRequestBody("application/json".toMediaType()))
+                .url("${getBaseUrl()}/images/generations")
+                .apply { buildAuthHeaders().forEach { (k, v) -> header(k, v) } }
+                .post(body.toRequestBody(JSON_MEDIA))
                 .build()
 
-            httpClient.newCall(httpRequest).execute().use { response ->
-                if (!response.isSuccessful) {
-                    val errBody = response.body?.string() ?: ""
-                    throw RuntimeException("HTTP ${response.code}: $errBody")
+            // Image rendering can take a while; allow more than the default call cap.
+            httpClient.newBuilder()
+                .callTimeout(240, TimeUnit.SECONDS)
+                .readTimeout(240, TimeUnit.SECONDS)
+                .build()
+                .newCall(httpRequest).execute().use { response ->
+                    val responseBody = response.body?.string().orEmpty()
+                    if (!response.isSuccessful) {
+                        throw RuntimeException(httpErrorMessage(response.code, responseBody))
+                    }
+                    json.decodeFromString(ImageGenerationResponse.serializer(), responseBody)
                 }
-                response.body?.bytes() ?: throw RuntimeException("Empty audio body")
-            }
         }
     }
 
     // ─── Automatic Speech Recognition (ASR) ────────────────────────────
 
     /**
-     * Transcribes an audio file using Z.ai's `/audio/transcriptions` endpoint.
-     * Returns the recognized text on success.
+     * Transcribes an audio file using `POST /audio/transcriptions` and the
+     * GLM-ASR-2512 model. Returns the recognized text on success.
      */
-    suspend fun transcribeAudio(audioFile: File, model: String = "whisper-1"): Result<String> {
+    suspend fun transcribeAudio(audioFile: File, model: String = ASR_MODEL): Result<String> {
         if (!hasCredentials()) {
             return Result.failure(IllegalStateException("Z.ai API Key تنظیم نشده"))
         }
         return runCatching {
-            val mediaType = "audio/*".toMediaType()
             val filePart = MultipartBody.Part.createFormData(
                 "file",
                 audioFile.name,
-                audioFile.asRequestBody(mediaType)
+                audioFile.asRequestBody("audio/*".toMediaType())
             )
             val multipart = MultipartBody.Builder()
                 .setType(MultipartBody.FORM)
@@ -697,12 +765,10 @@ class ZaiApiClient(
                 .build()
 
             httpClient.newCall(httpRequest).execute().use { response ->
+                val body = response.body?.string().orEmpty()
                 if (!response.isSuccessful) {
-                    val errBody = response.body?.string() ?: ""
-                    throw RuntimeException("HTTP ${response.code}: $errBody")
+                    throw RuntimeException(httpErrorMessage(response.code, body))
                 }
-                val body = response.body?.string()
-                    ?: throw RuntimeException("Empty transcription body")
                 val parsed = json.parseToJsonElement(body) as JsonObject
                 parsed["text"]?.jsonPrimitive?.contentOrNull ?: ""
             }
@@ -719,10 +785,12 @@ class ZaiApiClient(
     // ─── Stream event sealed class ──────────────────────────────────────
 
     sealed class StreamEvent {
-        object Open : StreamEvent()
+        data object Open : StreamEvent()
         data class Delta(val content: String) : StreamEvent()
         data class Reasoning(val content: String) : StreamEvent()
-        object Done : StreamEvent()
+        data class Usage(val totalTokens: Int) : StreamEvent()
+        data class Finished(val reason: String) : StreamEvent()
+        data object Done : StreamEvent()
         data class Error(val message: String) : StreamEvent()
     }
 
@@ -732,6 +800,11 @@ class ZaiApiClient(
         private const val KEY_CHAT_ID = "zai_chat_id"
         private const val KEY_USER_ID = "zai_user_id"
         private const val KEY_GOOGLE_CLIENT_ID = "google_web_client_id"
+
+        private val JSON_MEDIA = "application/json".toMediaType()
+
+        /** Speech-to-text model exposed at `/audio/transcriptions`. */
+        const val ASR_MODEL = "glm-asr-2512"
 
         /** Z.ai's general OpenAI-compatible endpoint (see docs.z.ai API reference). */
         const val DEFAULT_BASE_URL = "https://api.z.ai/api/paas/v4"

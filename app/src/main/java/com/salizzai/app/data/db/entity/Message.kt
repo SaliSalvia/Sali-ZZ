@@ -26,5 +26,16 @@ data class Message(
     val model: String? = null,
     val tokensUsed: Int = 0,
     val isError: Boolean = false,
+    /** Streamed `reasoning_content` for this answer (empty when thinking was off). */
+    val reasoning: String = "",
+    /** Wall-clock time the model spent thinking, in milliseconds. */
+    val reasoningMs: Long = 0,
+    /**
+     * JSON array of web-search sources used to ground this answer, or null.
+     * Stored as text so the sources survive app restarts.
+     */
+    val sources: String? = null,
     val createdAt: Long = System.currentTimeMillis()
-)
+) {
+    val hasReasoning: Boolean get() = reasoning.isNotBlank()
+}

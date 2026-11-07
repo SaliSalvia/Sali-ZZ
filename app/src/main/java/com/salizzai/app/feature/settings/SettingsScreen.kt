@@ -85,6 +85,7 @@ import com.salizzai.app.BuildConfig
 import com.salizzai.app.SaliZZaiApp
 import com.salizzai.app.data.api.ZaiApiClient
 import com.salizzai.app.data.model.AvailableModels
+import com.salizzai.app.data.model.ReasoningEffort
 import com.salizzai.app.data.model.ZaiModel
 import com.salizzai.app.feature.auth.AuthViewModel
 import com.salizzai.app.ui.theme.ErrorRed
@@ -123,7 +124,9 @@ fun SettingsScreen(
     val theme by prefs.theme.collectAsState(initial = "dark")
     val model by prefs.model.collectAsState(initial = AvailableModels.DEFAULT_MODEL)
     val temperature by prefs.temperature.collectAsState(initial = 0.7f)
-    val thinkingEnabled by prefs.thinkingEnabled.collectAsState(initial = false)
+    val thinkingEnabled by prefs.thinkingEnabled.collectAsState(initial = true)
+    val reasoningEffortValue by prefs.reasoningEffort.collectAsState(initial = ReasoningEffort.MAX.apiValue)
+    val webSearchEnabled by prefs.webSearchEnabled.collectAsState(initial = false)
     val systemPrompt by prefs.systemPrompt.collectAsState(initial = "")
     val ttsEnabled by prefs.ttsEnabled.collectAsState(initial = false)
     val voiceInputEnabled by prefs.voiceInputEnabled.collectAsState(initial = true)
@@ -415,10 +418,22 @@ fun SettingsScreen(
                     ChoicePill("تیره", theme == "dark") {
                         scope.launch { prefs.setTheme("dark") }
                     }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     ChoicePill("سیستمی", theme == "system") {
                         scope.launch { prefs.setTheme("system") }
                     }
+                    ChoicePill("AMOLED", theme == "amoled") {
+                        scope.launch { prefs.setTheme("amoled") }
+                    }
                 }
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    "حالت AMOLED پس‌زمینه را کاملاً مشکی می‌کند و در پنل‌های OLED باعث صرفه‌جویی باتری می‌شود.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
 
             // ─── Model ─────────────────────────────────────────────────
@@ -433,7 +448,7 @@ fun SettingsScreen(
                         Text(
                             AvailableModels.displayName(model),
                             style = MaterialTheme.typography.titleMedium,
-                            color = SaliPurple,
+                            color = MaterialTheme.colorScheme.primary,
                             fontWeight = FontWeight.SemiBold
                         )
                     }
@@ -487,43 +502,68 @@ fun SettingsScreen(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(10.dp))
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // GLM-5.3 / 5.3-Flash cannot turn reasoning off — Z.ai returns an
+                // error for thinking.type="disabled" — so those models expose depth
+                // (reasoning_effort) instead of an on/off switch.
+                Text("عمق تفکر", style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    text = if (AvailableModels.requiresThinking(model)) {
+                        "GLM-5.3 همیشه فکر می‌کند؛ این گزینه فقط میزان عمق استدلال را تعیین می‌کند."
+                    } else {
+                        "مدل پیش از پاسخ، مراحل استدلال را نشان می‌دهد."
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 Spacer(modifier = Modifier.height(8.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("تفکر عمیق (Reasoning)", style = MaterialTheme.typography.bodyMedium)
-                        Text(
-                            "مدل پیش از پاسخ، مراحل استدلال را نشان می‌دهد",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ReasoningEffort.SELECTABLE.forEach { option ->
+                        ChoicePill(option.label, reasoningEffortValue == option.apiValue) {
+                            scope.launch { prefs.setReasoningEffort(option.apiValue) }
+                        }
                     }
-                    Switch(
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    ReasoningEffort.from(reasoningEffortValue).description,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                if (AvailableModels.byId(model)?.canToggleThinking == true) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    ToggleRow(
+                        title = "فعال‌بودن تفکر",
+                        subtitle = "برای این مدل می‌توانید استدلال را کاملاً خاموش کنید",
                         checked = thinkingEnabled,
                         onCheckedChange = { v -> scope.launch { prefs.setThinkingEnabled(v) } }
                     )
                 }
-                Spacer(modifier = Modifier.height(10.dp))
+
+                Spacer(modifier = Modifier.height(14.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("دما", style = MaterialTheme.typography.bodyMedium)
                     Spacer(modifier = Modifier.weight(1f))
                     Text(
                         "%.1f".format(temperatureDraft),
                         style = MaterialTheme.typography.labelLarge,
-                        color = SaliPurple
+                        color = MaterialTheme.colorScheme.primary
                     )
                 }
                 Slider(
-                    value = temperatureDraft,
+                    value = temperatureDraft.coerceIn(0f, 1f),
                     onValueChange = { temperatureDraft = it },
                     onValueChangeFinished = {
-                        scope.launch { prefs.setTemperature(temperatureDraft) }
+                        scope.launch { prefs.setTemperature(temperatureDraft.coerceIn(0f, 1f)) }
                     },
-                    valueRange = 0f..2f
+                    valueRange = 0f..1f
                 )
                 Text(
-                    "مقدار کم = دقیق‌تر و پایدارتر، مقدار زیاد = خلاقانه‌تر",
+                    "بازهٔ مجاز Z.ai ۰ تا ۱ است. مقدار کم = دقیق‌تر، مقدار زیاد = خلاقانه‌تر.",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -546,6 +586,16 @@ fun SettingsScreen(
                     subtitle = "خواندن پاسخ مدل با صدا",
                     checked = ttsEnabled,
                     onCheckedChange = { v -> scope.launch { prefs.setTtsEnabled(v) } }
+                )
+                HorizontalDivider(
+                    modifier = Modifier.padding(vertical = 6.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant
+                )
+                ToggleRow(
+                    title = "جستجوی وب پیش‌فرض",
+                    subtitle = "هر پیام با نتایج زندهٔ وب (search-prime) پشتیبانی شود",
+                    checked = webSearchEnabled,
+                    onCheckedChange = { v -> scope.launch { prefs.setWebSearchEnabled(v) } }
                 )
             }
 
@@ -897,7 +947,7 @@ private fun SettingsSection(
             1.dp,
             MaterialTheme.colorScheme.outlineVariant
         ),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {

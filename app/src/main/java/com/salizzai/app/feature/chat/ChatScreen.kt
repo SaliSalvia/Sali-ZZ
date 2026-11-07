@@ -5,12 +5,16 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,6 +26,7 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -37,19 +42,19 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Message
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.StopCircle
 import androidx.compose.material.icons.filled.VolumeUp
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -57,15 +62,19 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -78,21 +87,34 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.salizzai.app.SaliZZaiApp
 import com.salizzai.app.data.db.entity.Attachment
 import com.salizzai.app.data.db.entity.Message
 import com.salizzai.app.data.model.AvailableModels
+import com.salizzai.app.data.model.ReasoningEffort
+import com.salizzai.app.data.model.WebSearchResult
 import com.salizzai.app.ui.components.MarkdownText
+import com.salizzai.app.ui.components.ReasoningCard
 import com.salizzai.app.ui.components.ThinkingIndicator
+import com.salizzai.app.ui.theme.SaliGradients
 import com.salizzai.app.ui.theme.SuccessGreen
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.Json
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -103,32 +125,37 @@ fun ChatScreen(
     modifier: Modifier = Modifier
 ) {
     val viewModel: ChatViewModel = viewModel(factory = ChatViewModel.provideFactory())
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
+    val haptics = LocalHapticFeedback.current
     val snackbarHostState = remember { SnackbarHostState() }
 
-    LaunchedEffect(conversationId) {
-        viewModel.setConversationId(conversationId)
-    }
+    val prefs = remember { SaliZZaiApp.get(context).userPrefs }
+    val remoteModelIds by prefs.availableModelIds.collectAsState(initial = emptySet())
 
-    // Multi-pick: ZIPs, images, text files
+    var showModelSheet by remember { mutableStateOf(false) }
+    var showOverflow by remember { mutableStateOf(false) }
+
+    LaunchedEffect(conversationId) { viewModel.setConversationId(conversationId) }
+
     val filePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenMultipleDocuments()
     ) { uris ->
         if (uris.isNullOrEmpty()) return@rememberLauncherForActivityResult
         scope.launch {
             for (uri in uris) {
-                val file = withContext(Dispatchers.IO) {
+                val loaded = withContext(Dispatchers.IO) {
                     val filename = queryFilename(context, uri) ?: "file"
                     val mimeType = context.contentResolver.getType(uri) ?: "application/octet-stream"
                     val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
                     if (bytes == null) null else Triple(filename, mimeType, bytes)
                 } ?: continue
 
-                val (filename, mimeType, bytes) = file
-                val isZip = filename.lowercase().endsWith(".zip") ||
+                val (filename, mimeType, bytes) = loaded
+                val lower = filename.lowercase()
+                val isZip = lower.endsWith(".zip") ||
                     mimeType == "application/zip" ||
                     mimeType == "application/x-zip-compressed"
                 val isImage = mimeType.startsWith("image/")
@@ -138,11 +165,9 @@ fun ChatScreen(
                     else -> viewModel.processRegularFile(filename, mimeType, bytes)
                 }
             }
-            viewModel.clearError()
         }
     }
 
-    // Error snackbar
     LaunchedEffect(uiState.error) {
         uiState.error?.let {
             snackbarHostState.showSnackbar(it)
@@ -151,29 +176,24 @@ fun ChatScreen(
     }
 
     val listState = rememberLazyListState()
-
-    // Auto-scroll: triggered on either message count or last message length
     val lastMsgLen by remember {
         derivedStateOf { uiState.messages.lastOrNull()?.content?.length ?: 0 }
     }
     val isNearBottom by remember {
         derivedStateOf {
-            val layoutInfo = listState.layoutInfo
-            val lastVisibleIndex = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-            lastVisibleIndex >= layoutInfo.totalItemsCount - 2
+            val info = listState.layoutInfo
+            val lastVisible = info.visibleItemsInfo.lastOrNull()?.index ?: 0
+            lastVisible >= info.totalItemsCount - 2
         }
     }
     LaunchedEffect(uiState.messages.size, lastMsgLen) {
         if (uiState.messages.isNotEmpty() && isNearBottom) {
-            // Use animateScrollToItem for smooth, edge-safe scrolling.
-            // A positive scrollOffset (0) is safer than negative values which can throw
-            // IllegalArgumentException on certain Compose versions when the target item
-            // is not yet measured.
             listState.animateScrollToItem(uiState.messages.lastIndex)
         }
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 title = {
@@ -181,39 +201,13 @@ fun ChatScreen(
                         Text(
                             text = uiState.conversationTitle,
                             style = MaterialTheme.typography.titleMedium,
-                            maxLines = 1
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
-                        // Active model chip — tapping it jumps to Settings.
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(50))
-                                .background(
-                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
-                                    RoundedCornerShape(50)
-                                )
-                                .clickable(onClick = onOpenSettings)
-                                .padding(horizontal = 8.dp, vertical = 2.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(6.dp)
-                                    .clip(CircleShape)
-                                    .background(SuccessGreen)
-                            )
-                            Spacer(modifier = Modifier.size(5.dp))
-                            Text(
-                                text = AvailableModels.displayName(uiState.model),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.size(3.dp))
-                            Text(
-                                text = "· تغییر",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
+                        ModelChip(
+                            modelId = uiState.model,
+                            onClick = { showModelSheet = true }
+                        )
                     }
                 },
                 navigationIcon = {
@@ -222,284 +216,623 @@ fun ChatScreen(
                     }
                 },
                 actions = {
-                    var menuExpanded by remember { mutableStateOf(false) }
                     Box {
-                        IconButton(onClick = { menuExpanded = true }) {
+                        IconButton(onClick = { showOverflow = true }) {
                             Icon(Icons.Filled.MoreVert, contentDescription = "گزینه‌های بیشتر")
                         }
                         DropdownMenu(
-                            expanded = menuExpanded,
-                            onDismissRequest = { menuExpanded = false }
+                            expanded = showOverflow,
+                            onDismissRequest = { showOverflow = false }
                         ) {
                             DropdownMenuItem(
                                 text = { Text("گفتگوی جدید") },
-                                onClick = { viewModel.newChat(); menuExpanded = false }
+                                onClick = { viewModel.newChat(); showOverflow = false }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("پاسخ دوباره") },
+                                onClick = { viewModel.regenerate(); showOverflow = false }
                             )
                             DropdownMenuItem(
                                 text = { Text("اشتراک‌گذاری") },
                                 onClick = {
                                     val intent = Intent(Intent.ACTION_SEND).apply {
                                         type = "text/plain"
-                                        putExtra(Intent.EXTRA_TEXT,
-                                            "https://github.com/SaliSalvia/Sali-ZZ")
+                                        putExtra(
+                                            Intent.EXTRA_TEXT,
+                                            "https://github.com/SaliSalvia/Sali-ZZ"
+                                        )
                                     }
                                     context.startActivity(Intent.createChooser(intent, "اشتراک‌گذاری"))
-                                    menuExpanded = false
+                                    showOverflow = false
                                 }
                             )
                             DropdownMenuItem(
                                 text = { Text("تنظیمات") },
-                                onClick = { onOpenSettings(); menuExpanded = false }
+                                onClick = { onOpenSettings(); showOverflow = false }
                             )
                         }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+                    containerColor = MaterialTheme.colorScheme.background
                 )
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) { data -> Snackbar(data) } },
         modifier = modifier
     ) { padding ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
                 .consumeWindowInsets(padding)
         ) {
-            // Reasoning panel (collapsible, like DeepSeek's "thinking" panel)
-            AnimatedVisibility(
-                visible = uiState.pendingReasoning.isNotBlank(),
-                enter = slideInVertically(tween(200)) + fadeIn(),
-                exit = slideOutVertically(tween(200)) + fadeOut(),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Surface(
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
+            Column(modifier = Modifier.fillMaxSize()) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(14.dp),
-                                strokeWidth = 2.dp
-                            )
-                            Spacer(modifier = Modifier.size(8.dp))
-                            Text(
-                                "در حال تفکر عمیق…",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                    if (uiState.messages.isEmpty()) {
+                        item(key = "welcome") {
+                            WelcomeContent(
+                                onSuggestion = { prompt ->
+                                    viewModel.sendMessage(prompt)
+                                }
                             )
                         }
-                        Spacer(modifier = Modifier.size(6.dp))
-                        Text(
-                            text = uiState.pendingReasoning,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-
-            // Messages list
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                if (uiState.messages.isEmpty()) {
-                    item { WelcomeContent() }
-                } else {
-                    items(
-                        items = uiState.messages,
-                        key = { it.id },
-                        contentType = { "chat_message" }
-                    ) { message ->
-                        MessageItem(
-                            message = message,
-                            onCopy = {
-                                clipboard.setText(AnnotatedString(message.content))
-                                scope.launch { snackbarHostState.showSnackbar("کپی شد") }
-                            },
-                            onSpeak = { viewModel.speakReply(message.content) },
-                            onStopSpeak = { viewModel.stopSpeaking() },
-                            isSpeaking = uiState.isSpeaking
-                        )
-                    }
-                }
-            }
-
-            // Attachments preview
-            AnimatedVisibility(
-                visible = uiState.attachments.isNotEmpty(),
-                enter = slideInVertically() + fadeIn(),
-                exit = slideOutVertically() + fadeOut()
-            ) {
-                LazyRow(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(uiState.attachments, key = { it.id }) { att ->
-                        val index = uiState.attachments.indexOfFirst { it.id == att.id }
-                        AttachmentChip(
-                            attachment = att,
-                            onRemove = {
-                                val dataUrl = uiState.pendingImageUrls.getOrNull(index)
-                                if (att.fileType == "image" && dataUrl != null) {
-                                    viewModel.removeImageAttachment(att.id, dataUrl)
-                                } else {
-                                    viewModel.removeAttachment(att.id)
+                    } else {
+                        val lastAssistantId = uiState.messages.lastOrNull { it.role == "assistant" }?.id
+                        items(
+                            items = uiState.messages,
+                            key = { it.id },
+                            contentType = { message ->
+                                when {
+                                    message.role == "user" -> "user"
+                                    message.isError -> "error"
+                                    else -> "assistant"
                                 }
                             }
-                        )
+                        ) { message ->
+                            val isLive = uiState.isStreaming && message.id == lastAssistantId
+                            MessageItem(
+                                message = message,
+                                reasoningText = if (isLive && uiState.pendingReasoning.isNotBlank()) {
+                                    uiState.pendingReasoning
+                                } else message.reasoning,
+                                reasoningStreaming = isLive && uiState.pendingReasoning.isNotBlank(),
+                                reasoningMs = if (isLive) uiState.pendingReasoningMs else message.reasoningMs,
+                                streaming = isLive && message.content.isNotBlank(),
+                                isSpeaking = uiState.speakingMessageId == message.id,
+                                canRegenerate = !uiState.isStreaming && message.id == lastAssistantId,
+                                onCopy = {
+                                    clipboard.setText(AnnotatedString(message.content))
+                                    scope.launch { snackbarHostState.showSnackbar("کپی شد") }
+                                },
+                                onSpeak = {
+                                    if (uiState.speakingMessageId == message.id) {
+                                        viewModel.stopSpeaking()
+                                    } else {
+                                        viewModel.speakReply(message.content, message.id)
+                                    }
+                                },
+                                onRegenerate = { viewModel.regenerate() }
+                            )
+                        }
+                    }
+                    if (uiState.isSearchingWeb) {
+                        item(key = "searching") { SearchingRow() }
                     }
                 }
+
+                AnimatedVisibility(
+                    visible = uiState.attachments.isNotEmpty(),
+                    enter = slideInVertically(tween(180)) + fadeIn(),
+                    exit = slideOutVertically(tween(140)) + fadeOut()
+                ) {
+                    LazyRow(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 2.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(uiState.attachments, key = { it.id }) { att ->
+                            val index = uiState.attachments.indexOfFirst { it.id == att.id }
+                            AttachmentChip(
+                                attachment = att,
+                                onRemove = {
+                                    val dataUrl = uiState.pendingImageUrls.getOrNull(index)
+                                    if (att.fileType == "image" && dataUrl != null) {
+                                        viewModel.removeImageAttachment(att.id, dataUrl)
+                                    } else {
+                                        viewModel.removeAttachment(att.id)
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+
+                ChatInputBar(
+                    text = if (uiState.voicePartial.isNotBlank()) uiState.voicePartial
+                    else uiState.draftInput,
+                    onTextChange = viewModel::updateDraftInput,
+                    onSend = {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        viewModel.sendMessage(it)
+                    },
+                    isStreaming = uiState.isStreaming,
+                    isListening = uiState.isListening,
+                    webSearchEnabled = uiState.webSearchEnabled,
+                    onToggleWebSearch = { viewModel.toggleWebSearch() },
+                    onUploadClick = { filePicker.launch(arrayOf("*/*")) },
+                    onMicClick = {
+                        if (uiState.isListening) viewModel.stopVoiceInput()
+                        else viewModel.startVoiceInput()
+                    },
+                    onStopClick = { viewModel.stopGeneration() }
+                )
             }
 
-            // Input bar
-            ChatInputBar(
-                text = if (uiState.voicePartial.isNotBlank()) uiState.voicePartial
-                       else uiState.draftInput,
-                onTextChange = viewModel::updateDraftInput,
-                onSend = { viewModel.sendMessage(it) },
-                isStreaming = uiState.isStreaming,
-                isListening = uiState.isListening,
-                onUploadClick = { filePicker.launch(arrayOf("*/*")) },
-                onMicClick = {
-                    if (uiState.isListening) viewModel.stopVoiceInput()
-                    else viewModel.startVoiceInput()
+            // Floating "jump to newest" pill when the user scrolled up mid-stream.
+            AnimatedVisibility(
+                visible = !isNearBottom && uiState.messages.isNotEmpty(),
+                enter = fadeIn() + scaleIn(initialScale = 0.85f),
+                exit = fadeOut(),
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 16.dp, bottom = 108.dp)
+            ) {
+                Surface(
+                    onClick = {
+                        scope.launch {
+                            if (uiState.messages.isNotEmpty()) {
+                                listState.animateScrollToItem(uiState.messages.lastIndex)
+                            }
+                        }
+                    },
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    shadowElevation = 6.dp
+                ) {
+                    Icon(
+                        Icons.Filled.ArrowDownward,
+                        contentDescription = "رفتن به آخرین پیام",
+                        modifier = Modifier.padding(10.dp).size(18.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+        }
+    }
+
+    if (showModelSheet) {
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(
+            onDismissRequest = { showModelSheet = false },
+            sheetState = sheetState,
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
+        ) {
+            ModelPickerSheet(
+                models = AvailableModels.catalog(remoteModelIds),
+                selectedId = uiState.model,
+                effort = uiState.reasoningEffort,
+                onSelect = {
+                    viewModel.setModel(it)
+                    showModelSheet = false
                 },
-                onStopClick = { viewModel.stopGeneration() }
+                onSelectEffort = viewModel::setReasoningEffort,
+                onOpenSettings = {
+                    showModelSheet = false
+                    onOpenSettings()
+                }
             )
         }
     }
 }
 
+// ─── Top bar chip ───────────────────────────────────────────────────
+
 @Composable
-private fun WelcomeContent() {
+private fun ModelChip(modelId: String, onClick: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .padding(top = 2.dp)
+            .clip(RoundedCornerShape(50))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 3.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(6.dp)
+                .clip(CircleShape)
+                .background(SuccessGreen)
+        )
+        Spacer(modifier = Modifier.size(5.dp))
+        Text(
+            text = AvailableModels.displayName(modelId),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1
+        )
+        Spacer(modifier = Modifier.size(4.dp))
+        Text(
+            text = "▾",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.primary
+        )
+    }
+}
+
+// ─── Model picker sheet ─────────────────────────────────────────────
+
+@Composable
+private fun ModelPickerSheet(
+    models: List<com.salizzai.app.data.model.ZaiModel>,
+    selectedId: String,
+    effort: ReasoningEffort,
+    onSelect: (String) -> Unit,
+    onSelectEffort: (ReasoningEffort) -> Unit,
+    onOpenSettings: () -> Unit
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 64.dp),
+            .padding(horizontal = 16.dp)
+            .padding(bottom = 24.dp)
+            .heightIn(max = 640.dp)
+    ) {
+        Text(
+            "انتخاب مدل",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold
+        )
+        Text(
+            "مدل‌های رایگان GLM-5 در بالای فهرست هستند.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 2.dp, bottom = 12.dp)
+        )
+
+        // Reasoning depth is the only knob GLM-5.3 exposes (thinking cannot be off).
+        Text(
+            "عمق تفکر",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ReasoningEffort.SELECTABLE.forEach { option ->
+                ValChip(
+                    text = option.label,
+                    selected = option == effort,
+                    onClick = { onSelectEffort(option) }
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(14.dp))
+
+        LazyColumn(
+            modifier = Modifier.weight(1f, fill = false),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            items(models, key = { it.id }) { model ->
+                val selected = model.id.equals(selectedId, ignoreCase = true)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(
+                            if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                            else Color.Transparent
+                        )
+                        .clickable { onSelect(model.id) }
+                        .padding(horizontal = 6.dp, vertical = 6.dp)
+                ) {
+                    RadioButton(selected = selected, onClick = { onSelect(model.id) })
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                model.displayName,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
+                            )
+                            model.badge?.let { badge ->
+                                Spacer(modifier = Modifier.size(6.dp))
+                                MiniBadge(
+                                    text = badge,
+                                    color = when {
+                                        model.isFreeTier -> SuccessGreen
+                                        badge == "بینایی" -> MaterialTheme.colorScheme.tertiary
+                                        else -> MaterialTheme.colorScheme.primary
+                                    }
+                                )
+                            }
+                            if (model.supportsVision) {
+                                Spacer(modifier = Modifier.size(4.dp))
+                                MiniBadge("تصویر", MaterialTheme.colorScheme.secondary)
+                            }
+                        }
+                        Text(
+                            model.description,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+        TextButton(onClick = onOpenSettings, modifier = Modifier.fillMaxWidth()) {
+            Text("تنظیمات کامل مدل و کلید API")
+        }
+    }
+}
+
+@Composable
+private fun ValChip(text: String, selected: Boolean, onClick: () -> Unit) {
+    Surface(
+        color = if (selected) MaterialTheme.colorScheme.primary
+        else MaterialTheme.colorScheme.surfaceContainerHigh,
+        contentColor = if (selected) MaterialTheme.colorScheme.onPrimary
+        else MaterialTheme.colorScheme.onSurfaceVariant,
+        shape = RoundedCornerShape(50),
+        modifier = Modifier.clip(RoundedCornerShape(50)).clickable(onClick = onClick)
+    ) {
+        Text(
+            text,
+            style = MaterialTheme.typography.labelLarge,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
+        )
+    }
+}
+
+@Composable
+private fun MiniBadge(text: String, color: Color) {
+    Surface(color = color.copy(alpha = 0.16f), shape = RoundedCornerShape(50)) {
+        Text(
+            text,
+            color = color,
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
+        )
+    }
+}
+
+// ─── Welcome ────────────────────────────────────────────────────────
+
+@Composable
+private fun WelcomeContent(onSuggestion: (String) -> Unit) {
+    val suggestions = listOf(
+        "یک برنامهٔ اندروید با Jetpack Compose برای پیگیری عادت‌ها بنویس" to "کدنویسی",
+        "این مقاله را نقد کن و نقاط ضعف روش‌شناسی‌اش را بگو" to "تحلیل",
+        "تفاوت GLM-5.3 و GLM-5.3-Flash چیست؟" to "مقایسه",
+        "یک ایمیل رسمی برای درخواست تخفیف بنویس" to "نوشتن"
+    )
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 32.dp, bottom = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(
             modifier = Modifier
-                .size(88.dp)
-                .background(
-                    color = MaterialTheme.colorScheme.primary,
-                    shape = RoundedCornerShape(28.dp)
-                ),
+                .size(72.dp)
+                .clip(RoundedCornerShape(24.dp))
+                .background(SaliGradients.brand(true)),
             contentAlignment = Alignment.Center
         ) {
             Text(
                 text = "Z",
                 style = MaterialTheme.typography.displayMedium,
-                color = MaterialTheme.colorScheme.onPrimary
+                fontWeight = FontWeight.Bold,
+                color = Color.White
             )
         }
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(14.dp))
+        Text("Sali-ZZai", style = MaterialTheme.typography.headlineMedium)
+        Spacer(modifier = Modifier.height(4.dp))
         Text(
-            text = "Sali-ZZai",
-            style = MaterialTheme.typography.headlineLarge
+            "دستیار هوشمند Z.ai روی اندروید — چت، تفکر عمیق، جستجوی وب، تصویر و تحلیل فایل",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 24.dp)
         )
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = "دستیار هوشمند Z.ai — چت، تحلیل ZIP، تولید تصویر و جستجوی وب",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(modifier = Modifier.height(24.dp))
-        Surface(
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-            shape = RoundedCornerShape(16.dp),
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp)
+        Spacer(modifier = Modifier.height(22.dp))
+
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text("💡 چند پیشنهاد:", style = MaterialTheme.typography.labelLarge)
-                Text("• چند فایل ZIP آپلود کن و تحلیل مقایسه‌ای بگیر", style = MaterialTheme.typography.bodySmall)
-                Text("• عکس از دست‌نوشته یا سند بگیر و تحلیل کن", style = MaterialTheme.typography.bodySmall)
-                Text("• با میکروفون صحبت کن و پاسخ صوتی بگیر", style = MaterialTheme.typography.bodySmall)
-                Text("• مدل‌های رایگان GLM-5.3 / GLM-5.2 / GLM-5.3 Flash از قبل انتخاب شده‌اند", style = MaterialTheme.typography.bodySmall)
+            suggestions.chunked(2).forEach { rowItems ->
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    rowItems.forEach { (prompt, tag) ->
+                        SuggestionCard(
+                            tag = tag,
+                            prompt = prompt,
+                            onClick = { onSuggestion(prompt) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    if (rowItems.size == 1) Spacer(modifier = Modifier.weight(1f))
+                }
             }
         }
     }
 }
+
+@Composable
+private fun SuggestionCard(
+    tag: String,
+    prompt: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = modifier.heightIn(min = 92.dp)
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(
+                tag,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                prompt,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+// ─── Message ────────────────────────────────────────────────────────
 
 @Composable
 private fun MessageItem(
     message: Message,
+    reasoningText: String,
+    reasoningStreaming: Boolean,
+    reasoningMs: Long,
+    streaming: Boolean,
+    isSpeaking: Boolean,
+    canRegenerate: Boolean,
     onCopy: () -> Unit,
     onSpeak: () -> Unit,
-    onStopSpeak: () -> Unit,
-    isSpeaking: Boolean
+    onRegenerate: () -> Unit
 ) {
     val isUser = message.role == "user"
     val showActions = !isUser && message.content.isNotBlank() && !message.isError
+    val sources = remember(message.sources) { parseSources(message.sources) }
 
-    Row(
+    Column(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
+        horizontalAlignment = if (isUser) Alignment.End else Alignment.Start
     ) {
-        Column(
-            modifier = Modifier.widthIn(max = 340.dp),
-            horizontalAlignment = if (isUser) Alignment.End else Alignment.Start
+        if (!isUser && reasoningText.isNotBlank()) {
+            ReasoningCard(
+                reasoning = reasoningText,
+                durationMs = reasoningMs,
+                isStreaming = reasoningStreaming,
+                modifier = Modifier
+                    .widthIn(max = 560.dp)
+                    .padding(bottom = 6.dp)
+            )
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
         ) {
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = if (isUser) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.surfaceVariant
-                ),
-                shape = RoundedCornerShape(
-                    topStart = 20.dp,
-                    topEnd = 20.dp,
-                    bottomStart = if (isUser) 20.dp else 4.dp,
-                    bottomEnd = if (isUser) 4.dp else 20.dp
+            val bubbleShape = RoundedCornerShape(
+                topStart = 20.dp,
+                topEnd = 20.dp,
+                bottomStart = if (isUser) 20.dp else 6.dp,
+                bottomEnd = if (isUser) 6.dp else 20.dp
+            )
+            val bubbleModifier = Modifier
+                .widthIn(max = 560.dp)
+                .clip(bubbleShape)
+                .then(
+                    if (isUser) Modifier.background(SaliGradients.userBubble(isDark(MaterialTheme.colorScheme.background)))
+                    else Modifier.background(MaterialTheme.colorScheme.surfaceContainer)
                 )
-            ) {
-                Box(modifier = Modifier.padding(12.dp)) {
-                    if (isUser) {
-                        Text(
-                            text = message.content,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onPrimary
+                .then(
+                    if (!isUser && message.isError) {
+                        Modifier.border(
+                            1.dp,
+                            MaterialTheme.colorScheme.error.copy(alpha = 0.4f),
+                            bubbleShape
                         )
-                    } else if (message.content.isBlank()) {
-                        ThinkingIndicator()
-                    } else {
-                        MarkdownText(markdown = message.content)
-                    }
+                    } else Modifier
+                )
+                .padding(horizontal = 14.dp, vertical = 10.dp)
+
+            Box(modifier = bubbleModifier) {
+                when {
+                    isUser -> Text(
+                        text = message.content,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.White
+                    )
+                    message.content.isBlank() -> ThinkingIndicator(
+                        label = if (reasoningText.isNotBlank()) "در حال نوشتن پاسخ…" else null
+                    )
+                    else -> MarkdownText(
+                        markdown = message.content,
+                        streaming = streaming
+                    )
                 }
             }
-            if (showActions) {
-                Row(
-                    modifier = Modifier.padding(top = 2.dp, start = 4.dp, end = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(2.dp)
-                ) {
-                    IconButton(onClick = onCopy, modifier = Modifier.size(28.dp)) {
+        }
+
+        if (sources.isNotEmpty()) {
+            LazyRow(
+                modifier = Modifier
+                    .widthIn(max = 560.dp)
+                    .padding(top = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                items(sources, key = { it.url }) { source ->
+                    SourceChip(source)
+                }
+            }
+        }
+
+        if (showActions) {
+            Row(
+                modifier = Modifier.padding(top = 2.dp, start = 2.dp, end = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(0.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onCopy, modifier = Modifier.size(30.dp)) {
+                    Icon(
+                        Icons.Filled.ContentCopy,
+                        contentDescription = "کپی",
+                        modifier = Modifier.size(15.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                IconButton(onClick = onSpeak, modifier = Modifier.size(30.dp)) {
+                    Icon(
+                        if (isSpeaking) Icons.Filled.StopCircle else Icons.Filled.VolumeUp,
+                        contentDescription = if (isSpeaking) "توقف پخش" else "پخش صوتی",
+                        modifier = Modifier.size(15.dp),
+                        tint = if (isSpeaking) MaterialTheme.colorScheme.error
+                        else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                if (canRegenerate) {
+                    IconButton(onClick = onRegenerate, modifier = Modifier.size(30.dp)) {
                         Icon(
-                            Icons.Filled.ContentCopy,
-                            contentDescription = "کپی",
-                            modifier = Modifier.size(14.dp),
+                            Icons.Filled.Refresh,
+                            contentDescription = "پاسخ دوباره",
+                            modifier = Modifier.size(15.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    IconButton(
-                        onClick = { if (isSpeaking) onStopSpeak() else onSpeak() },
-                        modifier = Modifier.size(28.dp)
-                    ) {
-                        Icon(
-                            if (isSpeaking) Icons.Filled.StopCircle else Icons.Filled.VolumeUp,
-                            contentDescription = "پخش صوتی",
-                            modifier = Modifier.size(14.dp),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
+                }
+                if (message.tokensUsed > 0) {
+                    Spacer(modifier = Modifier.size(4.dp))
+                    Text(
+                        "${message.tokensUsed} توکن",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }
@@ -507,38 +840,86 @@ private fun MessageItem(
 }
 
 @Composable
-private fun AttachmentChip(
-    attachment: Attachment,
-    onRemove: () -> Unit
-) {
+private fun SourceChip(source: WebSearchResult) {
+    val context = LocalContext.current
+    Surface(
+        onClick = {
+            runCatching {
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(source.url)))
+            }
+        },
+        shape = RoundedCornerShape(10.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = Modifier.widthIn(max = 200.dp)
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+            Text(
+                source.hostName.ifBlank { "منبع" },
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 1
+            )
+            Text(
+                source.name,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
+private fun SearchingRow() {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .padding(12.dp)
+    ) {
+        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+        Spacer(modifier = Modifier.size(10.dp))
+        Text(
+            "در حال جستجو در وب…",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+// ─── Attachments ────────────────────────────────────────────────────
+
+@Composable
+private fun AttachmentChip(attachment: Attachment, onRemove: () -> Unit) {
     val icon = when (attachment.fileType) {
         "zip" -> Icons.Filled.AttachFile
         "image" -> Icons.Filled.Image
         else -> Icons.Filled.AttachFile
     }
-    Card(
-        modifier = Modifier.padding(2.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        ),
-        shape = RoundedCornerShape(16.dp)
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh
     ) {
         Row(
-            modifier = Modifier.padding(8.dp),
+            modifier = Modifier.padding(start = 10.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(20.dp)
+                modifier = Modifier.size(18.dp)
             )
             Spacer(modifier = Modifier.size(8.dp))
-            Column {
+            Column(modifier = Modifier.widthIn(max = 160.dp)) {
                 Text(
                     text = attachment.originalName,
                     style = MaterialTheme.typography.labelMedium,
-                    maxLines = 1
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 Text(
                     text = when (attachment.fileType) {
@@ -550,13 +931,19 @@ private fun AttachmentChip(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            Spacer(modifier = Modifier.size(8.dp))
-            IconButton(onClick = onRemove, modifier = Modifier.size(20.dp)) {
-                Icon(Icons.Filled.Close, contentDescription = "حذف")
+            IconButton(onClick = onRemove, modifier = Modifier.size(28.dp)) {
+                Icon(
+                    Icons.Filled.Close,
+                    contentDescription = "حذف",
+                    modifier = Modifier.size(15.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }
 }
+
+// ─── Input bar ──────────────────────────────────────────────────────
 
 @Composable
 private fun ChatInputBar(
@@ -565,6 +952,8 @@ private fun ChatInputBar(
     onSend: (String) -> Unit,
     isStreaming: Boolean,
     isListening: Boolean,
+    webSearchEnabled: Boolean,
+    onToggleWebSearch: () -> Unit,
     onUploadClick: () -> Unit,
     onMicClick: () -> Unit,
     onStopClick: () -> Unit
@@ -575,61 +964,131 @@ private fun ChatInputBar(
             .wrapContentHeight()
             .imePadding()
             .navigationBarsPadding(),
-        color = MaterialTheme.colorScheme.surface,
-        shadowElevation = 8.dp,
-        tonalElevation = 2.dp
+        color = MaterialTheme.colorScheme.background
     ) {
-        Row(
-            modifier = Modifier
-                .padding(horizontal = 8.dp, vertical = 8.dp)
-                .fillMaxWidth(),
-            verticalAlignment = Alignment.Bottom
-        ) {
-            IconButton(onClick = onUploadClick) {
-                Icon(Icons.Filled.Add, contentDescription = "آپلود فایل")
-            }
-            OutlinedTextField(
-                value = text,
-                onValueChange = onTextChange,
-                placeholder = { Text("پیام بنویسید…") },
-                modifier = Modifier.weight(1f),
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
-                maxLines = 5,
-                shape = RoundedCornerShape(24.dp)
-            )
-            IconButton(
-                onClick = onMicClick,
-                modifier = Modifier.padding(start = 4.dp)
-            ) {
-                if (isListening) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.primary
+        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+            Row(
+                verticalAlignment = Alignment.Bottom,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(26.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainer)
+                    .border(
+                        1.dp,
+                        MaterialTheme.colorScheme.outlineVariant,
+                        RoundedCornerShape(26.dp)
                     )
-                } else {
-                    Icon(Icons.Filled.Mic, contentDescription = "ورودی صوتی")
-                }
-            }
-            if (isStreaming) {
-                IconButton(onClick = onStopClick) {
-                    Icon(Icons.Filled.StopCircle, contentDescription = "توقف")
-                }
-            } else {
-                IconButton(
-                    onClick = { onSend(text) },
-                    enabled = text.isNotBlank()
-                ) {
+                    .padding(start = 4.dp, end = 4.dp, top = 4.dp, bottom = 4.dp)
+            ) {
+                IconButton(onClick = onUploadClick, modifier = Modifier.size(40.dp)) {
                     Icon(
-                        Icons.Filled.Send,
-                        contentDescription = "ارسال",
-                        tint = if (text.isNotBlank()) MaterialTheme.colorScheme.primary
+                        Icons.Filled.Add,
+                        contentDescription = "افزودن فایل، ZIP یا تصویر",
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = onTextChange,
+                    placeholder = {
+                        Text(
+                            "پیام خود را بنویسید…",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    },
+                    modifier = Modifier.weight(1f),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
+                    maxLines = 6,
+                    shape = RoundedCornerShape(22.dp),
+                    colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color.Transparent,
+                        unfocusedBorderColor = Color.Transparent,
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent
+                    )
+                )
+                IconButton(onClick = onToggleWebSearch, modifier = Modifier.size(40.dp)) {
+                    Icon(
+                        Icons.Filled.Language,
+                        contentDescription = "جستجوی وب",
+                        modifier = Modifier.size(19.dp),
+                        tint = if (webSearchEnabled) MaterialTheme.colorScheme.primary
                         else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                IconButton(onClick = onMicClick, modifier = Modifier.size(40.dp)) {
+                    if (isListening) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    } else {
+                        Icon(
+                            Icons.Filled.Mic,
+                            contentDescription = "ورودی صوتی",
+                            modifier = Modifier.size(20.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                val sendEnabled = text.isNotBlank() && !isStreaming
+                val sendSize by animateDpAsState(
+                    targetValue = if (sendEnabled || isStreaming) 40.dp else 36.dp,
+                    animationSpec = tween(140),
+                    label = "send-size"
+                )
+                val sendBrush: androidx.compose.ui.graphics.Brush = when {
+                    isStreaming -> androidx.compose.ui.graphics.SolidColor(
+                        MaterialTheme.colorScheme.error.copy(alpha = 0.15f)
+                    )
+                    sendEnabled -> SaliGradients.brand(isDark(MaterialTheme.colorScheme.background))
+                    else -> androidx.compose.ui.graphics.SolidColor(
+                        MaterialTheme.colorScheme.surfaceContainerHigh
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .size(sendSize)
+                        .clip(CircleShape)
+                        .background(sendBrush)
+                        .clickable(enabled = isStreaming || sendEnabled) {
+                            if (isStreaming) onStopClick() else onSend(text)
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = if (isStreaming) Icons.Filled.StopCircle else Icons.Filled.Send,
+                        contentDescription = if (isStreaming) "توقف" else "ارسال",
+                        modifier = Modifier.size(18.dp),
+                        tint = when {
+                            isStreaming -> MaterialTheme.colorScheme.error
+                            sendEnabled -> Color.White
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                }
+            }
+            if (webSearchEnabled) {
+                Text(
+                    "جستجوی وب روشن است — پاسخ با منابع وب پشتیبانی می‌شود.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 8.dp, top = 4.dp)
+                )
             }
         }
     }
+}
+
+private fun isDark(color: Color): Boolean =
+    (0.299 * color.red + 0.587 * color.green + 0.114 * color.blue) < 0.5f
+
+private fun parseSources(raw: String?): List<WebSearchResult> {
+    if (raw.isNullOrBlank()) return emptyList()
+    return runCatching {
+        Json.decodeFromString(ListSerializer(WebSearchResult.serializer()), raw)
+    }.getOrDefault(emptyList())
 }
 
 private fun queryFilename(context: android.content.Context, uri: Uri): String? {

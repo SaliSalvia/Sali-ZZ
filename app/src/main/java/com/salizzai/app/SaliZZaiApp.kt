@@ -36,17 +36,10 @@ class SaliZZaiApp : Application() {
 
         instance = this
 
-        // Initialize encrypted preferences (for API key + sensitive data)
-        val masterKey = MasterKey.Builder(this)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
-        encryptedPrefs = EncryptedSharedPreferences.create(
-            this,
-            "sali_zzai_secure",
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-        )
+        // Initialize encrypted preferences (for API key + sensitive data).
+        // Uses the self-healing builder below: a corrupt keystore entry used to
+        // crash the app on launch with no way to recover from the UI.
+        encryptedPrefs = createSecurePrefs()
 
         // Initialize Room database (local, no server)
         database = AppDatabase.getInstance(this)
