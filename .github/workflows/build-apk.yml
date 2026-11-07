@@ -104,11 +104,33 @@ jobs:
           if-no-files-found: error
           retention-days: 60
 
-      - name: Create GitHub Release on version tag
-        if: startsWith(github.ref, 'refs/tags/v')
+      # A pushed tag already carries the version, but an automated workspace
+      # cannot push tags (GitHub refuses ref writes through the branch API), so a
+      # version bump landing on the default branch publishes its own tag here.
+      # The release step below only fires once per version.
+      - name: Resolve release tag from versionName
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(sed -n 's/^[[:space:]]*versionName = "\(.*\)"/\1/p' app/build.gradle.kts | head -n1)
+          if [[ -z "$version" ]]; then
+            echo "::error::could not read versionName from app/build.gradle.kts"
+            exit 1
+          fi
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code --tags origin "refs/tags/v$version" > /dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create GitHub Release for the current version
+        if: startsWith(github.ref, 'refs/tags/v') || (github.ref == 'refs/heads/master' && steps.version.outputs.exists == 'false')
         uses: softprops/action-gh-release@v2
         with:
-          name: Sali-ZZai ${{ github.ref_name }}
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || steps.version.outputs.tag }}
+          name: Sali-ZZai ${{ steps.version.outputs.tag }}
           generate_release_notes: true
           files: |
             dist/*.apk
