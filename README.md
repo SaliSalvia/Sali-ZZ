@@ -102,7 +102,7 @@ git push -u origin main
 
 پس از Push، در GitHub به **Actions → Build Native Android APK** بروید. اجرای خودکار APK امضاشده را می‌سازد؛ فایل `Sali-ZZai.apk` را از بخش **Artifacts → sali-zzai-apk** دانلود کنید. برای اجرای دستی هم **Run workflow** را بزنید.
 
-> APK اکشن با کلید debug امضا می‌شود تا نصب و آزمایش روی گوشی آسان باشد؛ برای انتشار عمومی در فروشگاه، keystore انتشار اختصاصی لازم است.
+> تا وقتی چهار Secret امضا تنظیم نشده، APK اکشن با کلید debug امضا می‌شود (نصب‌شدنی است، ولی کلید debug هر Runner متفاوت است و نصب روی نسخهٔ قبلی رد می‌شود). برای امضای ثابت و قابل آپدیت، طبق [راهنمای امضا](docs/SIGNING-GUIDE.md) یک keystore بسازید و چهار Secret را تنظیم کنید.
 
 ### روش ۲: Android Studio
 ۱. این پروژه را در Android Studio باز کنید
