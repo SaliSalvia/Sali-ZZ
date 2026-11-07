@@ -36,7 +36,7 @@ fun BrandIntroScreen(onFinished: () -> Unit) {
         launch {
             logoScale.animateTo(
                 targetValue = 1f,
-                animationSpec = tween(720, easing = FastOutSlowInEasing)
+                animationSpec = tween(420, easing = FastOutSlowInEasing)
             )
         }
         launch {
@@ -44,23 +44,23 @@ fun BrandIntroScreen(onFinished: () -> Unit) {
                 targetValue = 1f,
                 animationSpec = tween(260, easing = FastOutSlowInEasing)
             )
-            delay(430)
+            delay(220)
             glowAlpha.animateTo(
                 targetValue = 0f,
-                animationSpec = tween(360, easing = FastOutLinearInEasing)
+                animationSpec = tween(240, easing = FastOutLinearInEasing)
             )
         }
 
         logoAlpha.animateTo(
             targetValue = 1f,
-            animationSpec = tween(320, easing = FastOutSlowInEasing)
+            animationSpec = tween(220, easing = FastOutSlowInEasing)
         )
-        delay(390)
+        delay(200)
         logoAlpha.animateTo(
             targetValue = 0f,
-            animationSpec = tween(350, easing = FastOutLinearInEasing)
+            animationSpec = tween(240, easing = FastOutLinearInEasing)
         )
-        delay(140)
+        delay(70)
         onFinished()
     }
 
