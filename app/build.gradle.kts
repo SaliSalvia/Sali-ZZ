@@ -17,13 +17,14 @@ android {
         applicationId = "com.salizzai.app"
         minSdk = 26  // Required for PBKDF2WithHmacSHA256
         targetSdk = 35
-        versionCode = 4
-        versionName = "2.0.2"
+        versionCode = 5
+        versionName = "2.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
 
-        // Z.ai default endpoint (overridable in Settings)
-        buildConfigField("String", "ZAI_BASE_URL", "\"https://api.z.ai/api/v1\"")
+        // Z.ai's general OpenAI-compatible endpoint (overridable in Settings).
+        // /api/v1 is the Codex-specific endpoint and does not serve /chat/completions.
+        buildConfigField("String", "ZAI_BASE_URL", "\"https://api.z.ai/api/paas/v4\"")
     }
 
     // ─── Release signing config ────────────────────────────────────

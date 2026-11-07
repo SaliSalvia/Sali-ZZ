@@ -11,6 +11,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,6 +32,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -75,6 +77,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -83,8 +86,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.salizzai.app.data.db.entity.Attachment
 import com.salizzai.app.data.db.entity.Message
+import com.salizzai.app.data.model.AvailableModels
 import com.salizzai.app.ui.components.MarkdownText
 import com.salizzai.app.ui.components.ThinkingIndicator
+import com.salizzai.app.ui.theme.SuccessGreen
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -178,11 +183,37 @@ fun ChatScreen(
                             style = MaterialTheme.typography.titleMedium,
                             maxLines = 1
                         )
-                        Text(
-                            text = uiState.model,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        // Active model chip — tapping it jumps to Settings.
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(50))
+                                .background(
+                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                                    RoundedCornerShape(50)
+                                )
+                                .clickable(onClick = onOpenSettings)
+                                .padding(horizontal = 8.dp, vertical = 2.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(SuccessGreen)
+                            )
+                            Spacer(modifier = Modifier.size(5.dp))
+                            Text(
+                                text = AvailableModels.displayName(uiState.model),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.size(3.dp))
+                            Text(
+                                text = "· تغییر",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
                 },
                 navigationIcon = {
@@ -394,7 +425,7 @@ private fun WelcomeContent() {
                 Text("• چند فایل ZIP آپلود کن و تحلیل مقایسه‌ای بگیر", style = MaterialTheme.typography.bodySmall)
                 Text("• عکس از دست‌نوشته یا سند بگیر و تحلیل کن", style = MaterialTheme.typography.bodySmall)
                 Text("• با میکروفون صحبت کن و پاسخ صوتی بگیر", style = MaterialTheme.typography.bodySmall)
-                Text("• مدل GLM-4.6 را امتحان کن — با تفکر عمیق", style = MaterialTheme.typography.bodySmall)
+                Text("• مدل‌های رایگان GLM-5.3 / GLM-5.2 / GLM-5.3 Flash از قبل انتخاب شده‌اند", style = MaterialTheme.typography.bodySmall)
             }
         }
     }

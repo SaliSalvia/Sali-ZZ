@@ -4,11 +4,14 @@ import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import com.salizzai.app.data.model.AvailableModels
 
 private val Context.dataStore by preferencesDataStore(name = "sali_zzai_prefs")
 
@@ -28,11 +31,13 @@ class UserPreferences(private val context: Context) {
         val TTS_ENABLED = booleanPreferencesKey("tts_enabled")
         val VOICE_INPUT_ENABLED = booleanPreferencesKey("voice_input_enabled")
         val AUTO_SEND_VOICE = booleanPreferencesKey("auto_send_voice")
+        val AVAILABLE_MODEL_IDS = stringSetPreferencesKey("available_model_ids")
+        val API_VALIDATED_AT = longPreferencesKey("api_validated_at")
     }
 
     val theme: Flow<String> = context.dataStore.data.map { it[THEME] ?: "dark" }
     val language: Flow<String> = context.dataStore.data.map { it[LANGUAGE] ?: "fa" }
-    val model: Flow<String> = context.dataStore.data.map { it[MODEL] ?: "glm-4.6" }
+    val model: Flow<String> = context.dataStore.data.map { it[MODEL] ?: AvailableModels.DEFAULT_MODEL }
     val temperature: Flow<Float> = context.dataStore.data.map { it[TEMPERATURE] ?: 0.7f }
     val thinkingEnabled: Flow<Boolean> = context.dataStore.data.map { it[THINKING_ENABLED] ?: false }
     val systemPrompt: Flow<String> = context.dataStore.data.map { it[SYSTEM_PROMPT] ?: "" }
@@ -43,6 +48,13 @@ class UserPreferences(private val context: Context) {
     val ttsEnabled: Flow<Boolean> = context.dataStore.data.map { it[TTS_ENABLED] ?: false }
     val voiceInputEnabled: Flow<Boolean> = context.dataStore.data.map { it[VOICE_INPUT_ENABLED] ?: true }
     val autoSendVoice: Flow<Boolean> = context.dataStore.data.map { it[AUTO_SEND_VOICE] ?: false }
+
+    /** Model ids last reported by the Z.ai API (empty until a key is verified). */
+    val availableModelIds: Flow<Set<String>> =
+        context.dataStore.data.map { it[AVAILABLE_MODEL_IDS] ?: emptySet() }
+
+    /** Epoch millis of the last successful API-key validation (0 = never). */
+    val apiValidatedAt: Flow<Long> = context.dataStore.data.map { it[API_VALIDATED_AT] ?: 0L }
 
     /** Blocking snapshot used by non-async code paths (e.g. [AuthRepository.currentUser]). */
     suspend fun loggedInUserIdSnapshot(): String? = loggedInUserId.first()
@@ -87,5 +99,13 @@ class UserPreferences(private val context: Context) {
     }
     suspend fun setAutoSendVoice(value: Boolean) {
         context.dataStore.edit { it[AUTO_SEND_VOICE] = value }
+    }
+    suspend fun setAvailableModelIds(ids: Set<String>) {
+        context.dataStore.edit {
+            if (ids.isEmpty()) it.remove(AVAILABLE_MODEL_IDS) else it[AVAILABLE_MODEL_IDS] = ids
+        }
+    }
+    suspend fun setApiValidatedAt(value: Long) {
+        context.dataStore.edit { it[API_VALIDATED_AT] = value }
     }
 }

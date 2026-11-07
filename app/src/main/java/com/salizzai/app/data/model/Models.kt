@@ -22,7 +22,7 @@ data class ChatMessage(
 
 @Serializable
 data class ChatCompletionRequest(
-    val model: String = "glm-4.6",
+    val model: String = AvailableModels.DEFAULT_MODEL,
     val messages: List<ChatMessage>,
     @SerialName("thinking")
     val thinking: ThinkingConfig? = null,
@@ -120,25 +120,105 @@ data class ZaiModel(
     val supportsThinking: Boolean = false,
     val supportsVision: Boolean = false,
     val badge: String? = null,
-    val contextWindow: Int = 128_000
+    val contextWindow: Int = 128_000,
+    /** Models the user can chat with for free on chat.z.ai / the free tier. */
+    val isFreeTier: Boolean = false
 )
 
+/**
+ * Built-in model catalogue used before (and alongside) the live list returned by
+ * the Z.ai `/models` endpoint.
+ *
+ * The three GLM-5 models the app prefers by default are free to use on
+ * chat.z.ai, so they sit at the top of [PRIORITY] and are the default choice.
+ * Older GLM-4.x models stay listed for accounts that only have access to them.
+ */
 object AvailableModels {
-    val ALL = listOf(
+
+    /** Default model — free on chat.z.ai and the most capable model of the GLM-5 line. */
+    const val DEFAULT_MODEL = "glm-5.3"
+
+    /** Preference order: free GLM-5 models first, then fallbacks. */
+    val PRIORITY: List<String> = listOf(
+        "glm-5.3",
+        "glm-5.2",
+        "glm-5.3-flash",
+        "glm-5.3-flashx",
+        "glm-5v-turbo",
+        "glm-4.7-flash",
+        "glm-4.6",
+        "glm-4.5",
+        "glm-4.5-flash"
+    )
+
+    val ALL: List<ZaiModel> = listOf(
+        ZaiModel(
+            id = "glm-5.3",
+            displayName = "GLM-5.3",
+            description = "پرچم‌دار Z.ai — کدنویسی، استدلال و عامل‌های هوشمند",
+            supportsThinking = true,
+            supportsVision = true,
+            badge = "رایگان",
+            contextWindow = 1_000_000,
+            isFreeTier = true
+        ),
+        ZaiModel(
+            id = "glm-5.2",
+            displayName = "GLM-5.2",
+            description = "نسل قبل پرچم‌دار — پایدار با پنجرهٔ یک‌میلیونی",
+            supportsThinking = true,
+            supportsVision = true,
+            badge = "رایگان",
+            contextWindow = 1_000_000,
+            isFreeTier = true
+        ),
+        ZaiModel(
+            id = "glm-5.3-flash",
+            displayName = "GLM-5.3 Flash",
+            description = "چندوجهی و فوق سریع — سبک‌ترین مدل نسل ۵",
+            supportsThinking = true,
+            supportsVision = true,
+            badge = "رایگان",
+            contextWindow = 1_000_000,
+            isFreeTier = true
+        ),
+        ZaiModel(
+            id = "glm-5.3-flashx",
+            displayName = "GLM-5.3 FlashX",
+            description = "نسخهٔ پرسرعت Flash با خروجی تا ۲۰۰ توکن بر ثانیه",
+            supportsThinking = true,
+            supportsVision = true,
+            badge = "سریع",
+            contextWindow = 1_000_000
+        ),
+        ZaiModel(
+            id = "glm-5v-turbo",
+            displayName = "GLM-5V Turbo",
+            description = "درک تصویر و ویدیو با سرعت بالا",
+            supportsVision = true,
+            badge = "بینایی",
+            contextWindow = 200_000
+        ),
+        ZaiModel(
+            id = "glm-4.7-flash",
+            displayName = "GLM-4.7 Flash",
+            description = "رایگان روی API — پاسخ‌های سریع و سبک",
+            badge = "رایگان",
+            contextWindow = 128_000,
+            isFreeTier = true
+        ),
         ZaiModel(
             id = "glm-4.6",
             displayName = "GLM-4.6",
-            description = "جدیدترین و قدرتمندترین مدل Z.ai",
+            description = "مدل نسل قبل — سازگار با کلیدهای قدیمی‌تر",
             supportsThinking = true,
             supportsVision = true,
-            badge = "پیشنهادی",
             contextWindow = 200_000
         ),
         ZaiModel(
             id = "glm-4.5v",
             displayName = "GLM-4.5V",
-            description = "نسخه بینایی — درک تصویر و سند",
-            supportsThinking = false,
+            description = "نسخهٔ بینایی — درک تصویر و سند",
             supportsVision = true,
             badge = "بینایی",
             contextWindow = 64_000
@@ -146,47 +226,77 @@ object AvailableModels {
         ZaiModel(
             id = "glm-4.5",
             displayName = "GLM-4.5",
-            description = "نسخه پایدار قبلی",
+            description = "نسخهٔ پایدار قبلی",
             supportsThinking = true,
-            supportsVision = false,
             contextWindow = 128_000
         ),
         ZaiModel(
-            id = "glm-4-plus",
-            displayName = "GLM-4-Plus",
-            description = "نسخه پلاس — تعادل بهینه",
-            supportsThinking = false,
-            supportsVision = false,
-            contextWindow = 128_000
-        ),
-        ZaiModel(
-            id = "glm-4-air",
-            displayName = "GLM-4-Air",
-            description = "سریع و سبک برای پاسخ‌های فوری",
-            badge = "سریع",
-            contextWindow = 8_000
-        ),
-        ZaiModel(
-            id = "glm-4-airx",
-            displayName = "GLM-4-AirX",
-            description = "فوق سریع — ایده‌آل برای چت سبک",
-            badge = "فوق سریع",
-            contextWindow = 8_000
-        ),
-        ZaiModel(
-            id = "glm-4-flash",
-            displayName = "GLM-4-Flash",
-            description = "رایگان و مناسب کاربردهای ساده",
+            id = "glm-4.5-flash",
+            displayName = "GLM-4.5 Flash",
+            description = "رایگان روی API — مناسب کاربردهای ساده",
             badge = "رایگان",
-            contextWindow = 8_000
+            contextWindow = 128_000,
+            isFreeTier = true
         )
     )
 
+    /** Normalises ids such as `"GLM 5.3 Flash"` → `"glm-5.3-flash"`. */
+    fun normalizeId(raw: String): String =
+        raw.trim().lowercase().replace(Regex("\\s+"), "-")
+
+    fun byId(id: String): ZaiModel? =
+        ALL.firstOrNull { it.id.equals(id, ignoreCase = true) }
+
+    fun displayName(id: String): String = byId(id)?.displayName ?: id
+
+    /**
+     * Full picker list: known models in preference order, followed by any extra
+     * ids the API reported that the app does not know about yet.
+     */
+    fun catalog(remoteIds: Set<String> = emptySet()): List<ZaiModel> {
+        val seen = mutableSetOf<String>()
+        val items = mutableListOf<ZaiModel>()
+        PRIORITY.forEach { id ->
+            byId(id)?.let { model ->
+                if (seen.add(model.id)) items += model
+            }
+        }
+        ALL.forEach { model ->
+            if (seen.add(model.id)) items += model
+        }
+        remoteIds.map(::normalizeId)
+            .filter { it.isNotBlank() }
+            .sorted()
+            .forEach { id ->
+                if (seen.add(id)) {
+                    items += ZaiModel(
+                        id = id,
+                        displayName = id.uppercase(),
+                        description = "مدل گزارش‌شده توسط حساب Z.ai شما",
+                        badge = "از API"
+                    )
+                }
+            }
+        return items
+    }
+
+    /**
+     * Returns the best usable model id from a live model list, falling back to
+     * the preferred order. Returns `null` when the list is empty.
+     */
+    fun bestAvailable(ids: Collection<String>): String? {
+        val normalized = ids.map(::normalizeId).filter { it.isNotBlank() }
+        if (normalized.isEmpty()) return null
+        PRIORITY.firstOrNull { it in normalized }?.let { return it }
+        normalized.firstOrNull { it.contains("flash") }?.let { return it }
+        return normalized.first()
+    }
+
     /** Pick the right model for vision input. */
     fun pickForVision(currentModelId: String): String {
-        val current = ALL.firstOrNull { it.id == currentModelId }
+        val current = byId(currentModelId)
         if (current?.supportsVision == true) return current.id
-        return "glm-4.5v"
+        return "glm-5.3-flash"
     }
 }
 

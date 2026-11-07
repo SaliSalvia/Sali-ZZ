@@ -40,7 +40,7 @@ data class ChatUiState(
     val isStreaming: Boolean = false,
     val error: String? = null,
     val draftInput: String = "",
-    val model: String = "glm-4.6",
+    val model: String = AvailableModels.DEFAULT_MODEL,
     val thinkingEnabled: Boolean = false,
     val temperature: Float = 0.7f,
     val systemPrompt: String = "",
