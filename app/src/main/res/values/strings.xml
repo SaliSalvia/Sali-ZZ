@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- App name and identity -->
+    <string name="app_name">Sali-ZZai</string>
+    <string name="app_tagline">دستیار هوشمند</string>
+
+    <!-- Common UI strings (Persian/Farsi) -->
+    <string name="chat">چت</string>
+    <string name="history">تاریخچه</string>
+    <string name="discover">کشف</string>
+    <string name="image_gen">تصویر</string>
+    <string name="settings">تنظیمات</string>
+    <string name="new_chat">گفتگوی جدید</string>
+    <string name="send">ارسال</string>
+    <string name="stop">توقف</string>
+    <string name="upload_file">آپلود فایل / ZIP / تصویر</string>
+    <string name="type_message">پیام بنویسید…</string>
+    <string name="thinking">در حال تفکر…</string>
+    <string name="copy">کپی</string>
+    <string name="copied">کپی شد</string>
+    <string name="delete">حذف</string>
+    <string name="cancel">لغو</string>
+    <string name="confirm">تأیید</string>
+    <string name="loading">در حال بارگذاری…</string>
+    <string name="error">خطا</string>
+    <string name="retry">تلاش مجدد</string>
+
+    <!-- Auth strings -->
+    <string name="login">ورود</string>
+    <string name="signup">ثبت‌نام</string>
+    <string name="email">ایمیل</string>
+    <string name="password">گذرواژه</string>
+    <string name="name">نام</string>
+    <string name="username">نام کاربری</string>
+    <string name="logout">خروج از حساب</string>
+    <string name="free_account">حساب رایگان</string>
+    <string name="signup_title">ساخت حساب رایگان</string>
+    <string name="login_title">ورود به حساب</string>
+    <string name="welcome_back">خوش آمدید</string>
+    <string name="continue_as_guest">ادامه به‌عنوان مهمان</string>
+    <string name="google_signin">ادامه با گوگل</string>
+    <string name="otp_login">ورود با کد یک‌بار مصرف ایمیل</string>
+    <string name="enter_otp_code">کد ۶ رقمی</string>
+    <string name="verify_and_login">تأیید و ورود</string>
+    <string name="resend_code">ارسال مجدد کد</string>
+    <string name="delete_account">حذف حساب کاربری</string>
+
+    <!-- ZIP analysis -->
+    <string name="zip_analyze_overview">تحلیل کلی</string>
+    <string name="zip_analyze_security">بررسی امنیتی</string>
+    <string name="zip_analyze_architecture">بررسی معماری</string>
+    <string name="zip_analyze_compare">مقایسه نسخه‌ها</string>
+    <string name="file_tree">ساختار فایل‌ها</string>
+    <string name="expand_all">باز کردن همه</string>
+    <string name="collapse_all">جمع کردن همه</string>
+    <string name="multi_zip_mode">حالت مقایسه چند ZIP</string>
+
+    <!-- Settings -->
+    <string name="theme">تم برنامه</string>
+    <string name="theme_light">روشن</string>
+    <string name="theme_dark">تیره</string>
+    <string name="theme_system">سیستمی</string>
+    <string name="language">زبان</string>
+    <string name="model">مدل پیش‌فرض</string>
+    <string name="temperature">دما</string>
+    <string name="thinking_mode">تفکر عمیق</string>
+    <string name="system_prompt">دستورالعمل سیستم</string>
+    <string name="api_key">Z.ai API Key</string>
+    <string name="google_client_id">Google OAuth Web Client ID</string>
+    <string name="clear_data">پاک‌سازی همه گفتگوها</string>
+    <string name="about">درباره</string>
+    <string name="voice_settings">صوت</string>
+    <string name="voice_input">ورودی صوتی (میکروفون)</string>
+    <string name="tts_auto">پخش خودکار پاسخ (TTS)</string>
+
+    <!-- Voice -->
+    <string name="start_listening">شروع ضبط</string>
+    <string name="stop_listening">توقف ضبط</string>
+    <string name="listening">در حال شنیدن…</string>
+    <string name="speak_reply">پخش صوتی پاسخ</string>
+
+    <!-- Disclaimer -->
+    <string name="disclaimer">Z.ai ممکن است اشتباه کند. اطلاعات مهم را بررسی کنید.</string>
+
+    <!-- Image generation -->
+    <string name="generate_image">تولید تصویر</string>
+    <string name="image_prompt">توضیح تصویر مورد نظر…</string>
+    <string name="image_size_square">مربعی</string>
+    <string name="image_size_portrait">پرتره</string>
+    <string name="image_size_landscape">افقی</string>
+
+    <!-- Web search -->
+    <string name="search_web">جستجو در وب…</string>
+</resources>

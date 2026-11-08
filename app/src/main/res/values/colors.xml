@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Brand colors inspired by the violet, cyan and gold logo -->
+    <color name="purple_primary">#6C4BE0</color>
+    <color name="purple_dark">#2A1F4D</color>
+    <color name="purple_light">#9E86FF</color>
+    <color name="purple_accent">#4FD8E8</color>
+    <color name="brand_gold">#E0BC7A</color>
+
+    <!-- Dark theme colors -->
+    <color name="dark_background">#08070D</color>
+    <color name="dark_surface">#12101A</color>
+    <color name="dark_surface_variant">#1E1B29</color>
+    <color name="dark_on_background">#F3F0EA</color>
+    <color name="dark_on_surface">#F8F6F1</color>
+    <color name="dark_on_surface_variant">#B9B4C1</color>
+    <color name="dark_outline">#393344</color>
+
+    <!-- Light theme colors -->
+    <color name="light_background">#F5F2ED</color>
+    <color name="light_surface">#FFFEFC</color>
+    <color name="light_surface_variant">#EFECF3</color>
+    <color name="light_on_background">#1C1922</color>
+    <color name="light_on_surface">#1C1922</color>
+    <color name="light_on_surface_variant">#625D69</color>
+    <color name="light_outline">#D7D0DE</color>
+
+    <!-- Splash screen: matches the app background so the hand-off from the
+         system splash to Compose is seamless instead of flashing black. -->
+    <color name="splash_background">#08070D</color>
+</resources>

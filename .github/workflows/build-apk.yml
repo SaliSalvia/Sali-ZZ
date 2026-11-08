@@ -1,0 +1,152 @@
+name: Build Sali-ZZai APK
+
+on:
+  workflow_dispatch:
+  push:
+    # Default branch of this repo is `master` (a merge into it previously
+    # triggered no build at all because only `main` was listed here).
+    branches: [ main, master, 'arena/**', 'copilot/**', 'fix/**' ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, master ]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-sali-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Test and build APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # Set the executable bit before setup-gradle inspects/runs the wrapper.
+      - name: Make wrapper executable
+        run: chmod +x gradlew
+
+      # Keep the committed Gradle 8.9 wrapper as the single source of truth.
+      - name: Set up Gradle (cache the committed wrapper distribution)
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: 'wrapper'
+
+      - name: Run unit tests
+        shell: bash
+        run: |
+          set +e
+          ./gradlew --no-daemon test --console=plain > /tmp/test.log 2>&1
+          code=$?
+          # Surface the actual compiler/test errors as check annotations
+          grep -E "^e: |error:|FAILED|Execution failed" /tmp/test.log | head -n 30 | while IFS= read -r l; do echo "::error::${l//%/%25}"; done
+          tail -n 50 /tmp/test.log >> "$GITHUB_STEP_SUMMARY"
+          exit $code
+
+      # تا پاک‌سازی baseline، lint بلاک‌کننده نیست ولی گزارشش در artifact diagnostics هست.
+      - name: Android lint (non-blocking until baseline is clean)
+        continue-on-error: true
+        run: ./gradlew --no-daemon lintDebug
+
+      - name: Build debug APK (always installable)
+        run: ./gradlew --no-daemon assembleDebug
+
+      - name: Collect debug APK
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/app-debug.apk dist/Sali-ZZai-debug.apk
+
+      # A production release must use the repository-owned signing key.
+      # Do not create a release artifact with the public debug keystore.
+      - name: Prepare release signing
+        id: signing
+        env:
+          SALI_KEYSTORE_BASE64: ${{ secrets.SALI_KEYSTORE_BASE64 }}
+          SIGNING_KEYSTORE_PASSWORD: ${{ secrets.SALI_KEYSTORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SALI_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SALI_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "$SALI_KEYSTORE_BASE64" && -n "$SIGNING_KEYSTORE_PASSWORD" && -n "$SIGNING_KEY_ALIAS" && -n "$SIGNING_KEY_PASSWORD" ]]; then
+            printf '%s' "$SALI_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/sali.keystore"
+            keytool -list -keystore "$RUNNER_TEMP/sali.keystore" -storepass "$SIGNING_KEYSTORE_PASSWORD" >/dev/null
+            echo "SIGNING_KEYSTORE_FILE=$RUNNER_TEMP/sali.keystore" >> "$GITHUB_ENV"
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "Production signing key is available and valid."
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Release APK skipped: configure all four SALI signing secrets to publish a production-signed APK."
+          fi
+
+      - name: Build signed release APK
+        if: steps.signing.outputs.available == 'true'
+        run: |
+          ./gradlew --no-daemon assembleRelease
+          mkdir -p dist
+          cp app/build/outputs/apk/release/app-release.apk dist/Sali-ZZai-release.apk
+
+      - name: Checksums
+        run: cd dist && sha256sum *.apk > SHA256SUMS.txt
+
+      - name: Upload APK artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: Sali-ZZai-APK-${{ github.sha }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 60
+
+      # A pushed tag already carries the version, but an automated workspace
+      # cannot push tags (GitHub refuses ref writes through the branch API), so a
+      # version bump landing on the default branch publishes its own tag here.
+      # The release step below only fires once per version.
+      - name: Resolve release tag from versionName
+        if: steps.signing.outputs.available == 'true'
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(sed -n 's/^[[:space:]]*versionName = "\(.*\)"/\1/p' app/build.gradle.kts | head -n1)
+          if [[ -z "$version" ]]; then
+            echo "::error::could not read versionName from app/build.gradle.kts"
+            exit 1
+          fi
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code --tags origin "refs/tags/v$version" > /dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create GitHub Release for the current version
+        if: steps.signing.outputs.available == 'true' && (startsWith(github.ref, 'refs/tags/v') || ((github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && steps.version.outputs.exists == 'false'))
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || steps.version.outputs.tag }}
+          name: Sali-ZZai ${{ steps.version.outputs.tag }}
+          generate_release_notes: true
+          files: |
+            dist/Sali-ZZai-release.apk
+            dist/SHA256SUMS.txt
+
+      - name: Upload build diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: build-diagnostics
+          path: |
+            app/build/reports/
+            app/build/outputs/
+          if-no-files-found: ignore
+          retention-days: 14
