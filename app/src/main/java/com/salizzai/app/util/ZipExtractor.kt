@@ -46,9 +46,15 @@ object ZipExtractor {
         ".idea", ".vscode", "coverage", ".turbo", ".svelte-kit"
     )
 
-    private const val MAX_FILE_SIZE = 1024 * 1024 // 1MB per file
-    private const val MAX_EXTRACTED_TEXT = 256 * 1024 // 256KB total (doubled for scientific content)
+    private const val MAX_FILE_SIZE = 1024 * 1024 // 1MB text preview buffer per file
+    private const val MAX_EXTRACTED_TEXT = 256 * 1024 // 256KB total text preview
     private const val PER_FILE_TEXT_CAP = 8_000
+
+    // Hard resource limits apply to every archive, including binary entries.
+    private const val MAX_ARCHIVE_ENTRIES = 10_000
+    private const val MAX_ENTRY_UNCOMPRESSED_BYTES = 25L * 1024 * 1024
+    private const val MAX_ARCHIVE_UNCOMPRESSED_BYTES = 100L * 1024 * 1024
+    private const val MAX_ENTRY_PATH_LENGTH = 1_024
 
     data class ExtractionResult(
         val fileTree: List<FileTreeNode>,
@@ -65,12 +71,24 @@ object ZipExtractor {
         val textContents = mutableListOf<TextFile>()
         var totalSize = 0L
         var extractedTextSize = 0
+        var entryCount = 0
 
         ZipInputStream(ByteArrayInputStream(zipBytes)).use { zis ->
             var entry: ZipEntry? = zis.nextEntry
             while (entry != null) {
+                entryCount++
+                require(entryCount <= MAX_ARCHIVE_ENTRIES) {
+                    "Archive contains too many entries (limit: $MAX_ARCHIVE_ENTRIES)."
+                }
                 if (!entry.isDirectory) {
                     val path = entry.name
+                    require(
+                        path.isNotBlank() &&
+                            path.length <= MAX_ENTRY_PATH_LENGTH &&
+                            !path.startsWith("/") &&
+                            path.indexOf(92.toChar()) < 0 &&
+                            path.split('/').none { it == ".." || it.isEmpty() }
+                    ) { "Archive contains an invalid entry path." }
 
                     if (path.startsWith("__MACOSX/")) {
                         zis.closeEntry()
@@ -102,14 +120,19 @@ object ZipExtractor {
                         val n = zis.read(buffer)
                         if (n < 0) break
                         bytesCounted += n
+                        require(bytesCounted <= MAX_ENTRY_UNCOMPRESSED_BYTES) {
+                            "Archive entry exceeds the " + formatBytes(MAX_ENTRY_UNCOMPRESSED_BYTES) + " limit."
+                        }
+                        require(totalSize <= MAX_ARCHIVE_UNCOMPRESSED_BYTES - bytesCounted) {
+                            "Archive exceeds the " + formatBytes(MAX_ARCHIVE_UNCOMPRESSED_BYTES) + " expanded-size limit."
+                        }
                         if (textBuffer != null && !oversized) {
                             textBuffer.write(buffer, 0, n)
                             if (textBuffer.size() > MAX_FILE_SIZE) oversized = true
                         }
                     }
-                    // Prefer the header size when present (it is exact); otherwise use
-                    // the counted length which is always correct after a full read.
-                    val size = if (entry.size > 0) entry.size else bytesCounted
+                    // Count bytes actually streamed; ZIP header sizes are not trusted.
+                    val size = bytesCounted
                     files.add(FileInfo(path, size))
                     totalSize += size
 
