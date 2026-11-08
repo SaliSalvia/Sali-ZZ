@@ -76,7 +76,13 @@ class SaliZZaiApp : Application() {
                 java.io.File(filesDir.parent, "shared_prefs/$SECURE_PREFS_NAME.xml").delete()
                 build()
             } catch (e2: Exception) {
-                getSharedPreferences(SECURE_PREFS_NAME + "_fallback", MODE_PRIVATE)
+                // Never downgrade to plaintext storage: API keys and account
+                // identifiers must remain protected even when the Keystore is
+                // unavailable or the encrypted file cannot be recovered.
+                throw IllegalStateException(
+                    "Secure credential storage is unavailable. Credentials were not loaded or saved.",
+                    e2
+                )
             }
         }
     }

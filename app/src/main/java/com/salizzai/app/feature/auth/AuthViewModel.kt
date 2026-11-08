@@ -172,7 +172,9 @@ class AuthViewModel(
             // so there is nothing usable here for a non-Google credential.
             error("مدنوع credential پشتیبانی نمی‌شود (فقط Google ID Token)")
         }
-        // Decode the ID token's payload to extract the email and name
+        // Decode the ID token's payload for local profile display only.
+        // This is NOT signature verification; do not use these claims to grant
+        // access to remote resources or privileged operations.
         val token = credential.idToken
         val parts = token.split(".")
         val payload = if (parts.size >= 2) {
