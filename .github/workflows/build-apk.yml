@@ -138,14 +138,21 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ -n "$SIGNING_KEYSTORE_BASE64" && -n "$SIGNING_KEYSTORE_PASSWORD" && -n "$SIGNING_KEY_ALIAS" && -n "$SIGNING_KEY_PASSWORD" ]]; then
+          # Report which secrets are absent by name only, so a misnamed or
+          # missing secret is visible without ever printing its value.
+          missing=()
+          [[ -n "$SIGNING_KEYSTORE_BASE64" ]] || missing+=("SIGNING_KEYSTORE_BASE64")
+          [[ -n "$SIGNING_KEYSTORE_PASSWORD" ]] || missing+=("SALI_KEYSTORE_PASSWORD")
+          [[ -n "$SIGNING_KEY_ALIAS" ]] || missing+=("SALI_KEY_ALIAS")
+          [[ -n "$SIGNING_KEY_PASSWORD" ]] || missing+=("SALI_KEY_PASSWORD")
+          if [[ ${#missing[@]} -eq 0 ]]; then
             printf '%s' "$SIGNING_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/sali.keystore"
             echo "SIGNING_KEYSTORE_FILE=$RUNNER_TEMP/sali.keystore" >> "$GITHUB_ENV"
             ./gradlew --no-daemon assembleRelease
             cp app/build/outputs/apk/release/app-release.apk dist/Sali-ZZai-release.apk
             echo "release_built=true" >> "$GITHUB_OUTPUT"
           else
-            echo "::warning::Release APK skipped: configure all four SALI signing secrets before publishing."
+            echo "::warning::Release APK skipped: missing signing secrets: ${missing[*]}. Add them under Settings -> Secrets and variables -> Actions -> Secrets."
             echo "release_built=false" >> "$GITHUB_OUTPUT"
           fi
 

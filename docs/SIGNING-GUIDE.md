@@ -138,7 +138,7 @@ git push origin master
 Release will be signed with the repository keystore.
 ```
 
-اگر نوشت `Signing secrets incomplete -> release falls back to debug signing`، یعنی یکی از چهار Secret خالی/غلط است.
+اگر نوشت `Release APK skipped: missing signing secrets: ...`، فهرست Secretهای غایب همان‌جا آمده است.
 
 4. Release به‌طور خودکار با تگ `v<versionName>` ساخته می‌شود (`ساخت خودکار تگ از versionName`).
 
@@ -155,8 +155,10 @@ workflow دو job دارد: `Test and build APK` و `Publish signed release`. jo
 نکتهٔ مهم: **موفقیت گام `Build release APK` به معنی امضا نیست.** در حالت ناقص بودن Secretها همین گام این اخطار را چاپ می‌کند و موفق ادامه می‌دهد:
 
 ```
-::warning::Release APK skipped: configure all four SALI signing secrets before publishing.
+::warning::Release APK skipped: missing signing secrets: SALI_KEY_ALIAS, SALI_KEY_PASSWORD. Add them under Settings -> Secrets and variables -> Actions -> Secrets.
 ```
+
+فهرست بعد از `missing signing secrets:` دقیقاً نام‌هایی است که پیدا نشده‌اند (فقط نام‌ها چاپ می‌شوند، مقدار Secretها هرگز در لاگ نمی‌آید). اگر همهٔ چهار مورد را ساخته‌اید و باز یکی در این فهرست است، یعنی نام آن با نام خوانده‌شده توسط workflow فرق دارد یا در تب Variables/Environment ثبت شده است.
 
 برای تشخیص و رفع:
 
@@ -226,7 +228,7 @@ $env:SIGNING_KEY_PASSWORD="رمز-کلید"
 
 | خطا / نشانه | علت | راه‌حل |
 |---|---|---|
-| `Signing secrets incomplete -> release falls back to debug signing` | یک یا چند Secret خالی یا با نام اشتباه | نام‌ها را با جدول بخش ۴ تطبیق دهید و Secret را دوباره ذخیره کنید |
+| `Release APK skipped: missing signing secrets: ...` | یک یا چند Secret خالی یا با نام اشتباه | نام‌های فهرست‌شده را با جدول بخش ۴ تطبیق دهید و Secret را دوباره ذخیره کنید |
 | `Keystore was tampered with, or password was incorrect` | `SALI_KEYSTORE_PASSWORD` غلط است یا Base64 ناقص کپی شده | رمز را چک و `keystore.b64` را کامل و تک‌خطی دوباره بسازید |
 | `Failed to read key <alias> from store: No key with alias` | `SALI_KEY_ALIAS` غلط است | با `keytool -list -keystore ...` alias واقعی را ببینید |
 | `Given final block not properly padded` | Base64 خراب/بریده یا `base64` اشتباهِ سیستم (مک) | روش `openssl base64 -A` را استفاده کنید |
