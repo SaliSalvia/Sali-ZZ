@@ -1,8 +1,22 @@
 package com.salizzai.app.ui
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.History
@@ -12,10 +26,8 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItemDefaults
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -26,8 +38,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.salizzai.app.MainActivity
@@ -40,6 +57,7 @@ import com.salizzai.app.feature.discover.DiscoverScreen
 import com.salizzai.app.feature.history.HistoryScreen
 import com.salizzai.app.feature.imagegen.ImageGenScreen
 import com.salizzai.app.feature.settings.SettingsScreen
+import com.salizzai.app.ui.theme.SaliGradients
 
 sealed class Tab(val route: String, val label: String, val icon: ImageVector) {
     object Chat : Tab("chat", "چت", Icons.Filled.Message)
@@ -113,28 +131,11 @@ private fun MainAppNavigation(
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
-            NavigationBar(
-                containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                tonalElevation = 0.dp
-            ) {
-                listOf(
-                    Tab.Chat, Tab.History, Tab.Discover, Tab.ImageGen, Tab.Settings
-                ).forEach { tab ->
-                    NavigationBarItem(
-                        selected = currentTab.route == tab.route,
-                        onClick = { currentTabRoute = tab.route },
-                        icon = { Icon(tab.icon, contentDescription = tab.label) },
-                        label = { Text(tab.label) },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = MaterialTheme.colorScheme.primary,
-                            selectedTextColor = MaterialTheme.colorScheme.primary,
-                            indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
-                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    )
-                }
-            }
+            SaliBottomBar(
+                tabs = listOf(Tab.Chat, Tab.History, Tab.Discover, Tab.ImageGen, Tab.Settings),
+                currentRoute = currentTab.route,
+                onSelect = { tab -> currentTabRoute = tab.route }
+            )
         }
     ) { padding ->
         when (currentTab) {
@@ -161,6 +162,94 @@ private fun MainAppNavigation(
                 onLoggedOut = onLoggedOut,
                 modifier = Modifier.padding(padding)
             )
+        }
+    }
+}
+
+/**
+ * Floating, rounded navigation bar. The selected tab gets a gradient pill that
+ * fades and scales in, which reads as "this is the active surface" without any
+ * per-frame layout work.
+ */
+@Composable
+private fun SaliBottomBar(
+    tabs: List<Tab>,
+    currentRoute: String,
+    onSelect: (Tab) -> Unit
+) {
+    val dark = MaterialTheme.colorScheme.background.let { c ->
+        c.red * 0.299f + c.green * 0.587f + c.blue * 0.114f < 0.5f
+    }
+
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        shape = RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp),
+        border = BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
+        ),
+        shadowElevation = 12.dp,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 6.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            tabs.forEach { tab ->
+                val selected = tab.route == currentRoute
+                val emphasis by animateFloatAsState(
+                    targetValue = if (selected) 1f else 0f,
+                    animationSpec = tween(durationMillis = 220),
+                    label = "tab-emphasis"
+                )
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(18.dp))
+                        .selectable(
+                            selected = selected,
+                            role = Role.Tab,
+                            onClick = { onSelect(tab) }
+                        )
+                        .padding(vertical = 5.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Box(
+                            modifier = Modifier
+                                .size(width = 46.dp, height = 28.dp)
+                                .graphicsLayer { alpha = emphasis }
+                                .clip(RoundedCornerShape(50))
+                                .background(SaliGradients.brand(dark))
+                        )
+                        Icon(
+                            imageVector = tab.icon,
+                            contentDescription = tab.label,
+                            tint = if (selected) Color.White
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier
+                                .size(20.dp)
+                                .graphicsLayer {
+                                    val scale = 0.9f + emphasis * 0.1f
+                                    scaleX = scale
+                                    scaleY = scale
+                                }
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(3.dp))
+                    Text(
+                        text = tab.label,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (selected) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                        maxLines = 1
+                    )
+                }
+            }
         }
     }
 }

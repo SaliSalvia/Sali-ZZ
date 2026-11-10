@@ -6,6 +6,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -51,6 +52,7 @@ import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.NorthEast
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.StopCircle
@@ -59,6 +61,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -87,7 +90,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -95,6 +102,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -107,9 +115,17 @@ import com.salizzai.app.data.model.ReasoningEffort
 import com.salizzai.app.data.model.WebSearchResult
 import com.salizzai.app.ui.components.MarkdownText
 import com.salizzai.app.ui.components.ReasoningCard
+import com.salizzai.app.ui.components.SaliBrandAvatar
+import com.salizzai.app.ui.components.BrandOrb
 import com.salizzai.app.ui.components.ThinkingIndicator
+import com.salizzai.app.ui.components.liveBorder
+import com.salizzai.app.ui.components.pulseHalo
+import com.salizzai.app.ui.components.topGlow
 import com.salizzai.app.ui.theme.SaliGradients
 import com.salizzai.app.ui.theme.SuccessGreen
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -195,68 +211,81 @@ fun ChatScreen(
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(
-                            text = uiState.conversationTitle,
-                            style = MaterialTheme.typography.titleMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        ModelChip(
-                            modelId = uiState.model,
-                            onClick = { showModelSheet = true }
-                        )
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onOpenHistory) {
-                        Icon(Icons.Filled.History, contentDescription = "تاریخچه گفتگوها")
-                    }
-                },
-                actions = {
-                    Box {
-                        IconButton(onClick = { showOverflow = true }) {
-                            Icon(Icons.Filled.MoreVert, contentDescription = "گزینه‌های بیشتر")
-                        }
-                        DropdownMenu(
-                            expanded = showOverflow,
-                            onDismissRequest = { showOverflow = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("گفتگوی جدید") },
-                                onClick = { viewModel.newChat(); showOverflow = false }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("پاسخ دوباره") },
-                                onClick = { viewModel.regenerate(); showOverflow = false }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("اشتراک‌گذاری") },
-                                onClick = {
-                                    val intent = Intent(Intent.ACTION_SEND).apply {
-                                        type = "text/plain"
-                                        putExtra(
-                                            Intent.EXTRA_TEXT,
-                                            "https://github.com/SaliSalvia/Sali-ZZ"
-                                        )
-                                    }
-                                    context.startActivity(Intent.createChooser(intent, "اشتراک‌گذاری"))
-                                    showOverflow = false
+            Column {
+                Box(modifier = Modifier.topGlow()) {
+                    TopAppBar(
+                        title = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                SaliBrandAvatar(size = 26.dp)
+                                Spacer(modifier = Modifier.size(10.dp))
+                                Column {
+                                    Text(
+                                        text = uiState.conversationTitle,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    ModelChip(
+                                        modelId = uiState.model,
+                                        onClick = { showModelSheet = true }
+                                    )
                                 }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("تنظیمات") },
-                                onClick = { onOpenSettings(); showOverflow = false }
-                            )
-                        }
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
+                            }
+                        },
+                        navigationIcon = {
+                            IconButton(onClick = onOpenHistory) {
+                                Icon(Icons.Filled.History, contentDescription = "تاریخچه گفتگوها")
+                            }
+                        },
+                        actions = {
+                            Box {
+                                IconButton(onClick = { showOverflow = true }) {
+                                    Icon(Icons.Filled.MoreVert, contentDescription = "گزینه‌های بیشتر")
+                                }
+                                DropdownMenu(
+                                    expanded = showOverflow,
+                                    onDismissRequest = { showOverflow = false }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("گفتگوی جدید") },
+                                        onClick = { viewModel.newChat(); showOverflow = false }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("پاسخ دوباره") },
+                                        onClick = { viewModel.regenerate(); showOverflow = false }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("اشتراک‌گذاری") },
+                                        onClick = {
+                                            val intent = Intent(Intent.ACTION_SEND).apply {
+                                                type = "text/plain"
+                                                putExtra(
+                                                    Intent.EXTRA_TEXT,
+                                                    "https://github.com/SaliSalvia/Sali-ZZ"
+                                                )
+                                            }
+                                            context.startActivity(
+                                                Intent.createChooser(intent, "اشتراک‌گذاری")
+                                            )
+                                            showOverflow = false
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("تنظیمات") },
+                                        onClick = { onOpenSettings(); showOverflow = false }
+                                    )
+                                }
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = Color.Transparent
+                        )
+                    )
+                }
+                HorizontalDivider(
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
                 )
-            )
+            }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) { data -> Snackbar(data) } },
         modifier = modifier
@@ -317,7 +346,8 @@ fun ChatScreen(
                                         viewModel.speakReply(message.content, message.id)
                                     }
                                 },
-                                onRegenerate = { viewModel.regenerate() }
+                                onRegenerate = { viewModel.regenerate() },
+                                modifier = Modifier.animateItem()
                             )
                         }
                     }
@@ -616,36 +646,42 @@ private fun WelcomeContent(onSuggestion: (String) -> Unit) {
         "یک ایمیل رسمی برای درخواست تخفیف بنویس" to "نوشتن"
     )
 
+    // Single soft reveal: the orb and cards fade/slide in once instead of
+    // popping in at full opacity on the first frame.
+    var appeared by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { appeared = true }
+    val reveal by animateFloatAsState(
+        targetValue = if (appeared) 1f else 0f,
+        animationSpec = tween(durationMillis = 480),
+        label = "welcome-reveal"
+    )
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 32.dp, bottom = 8.dp),
+            .graphicsLayer {
+                alpha = reveal
+                translationY = (1f - reveal) * 26.dp.toPx()
+            }
+            .padding(top = 26.dp, bottom = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Box(
-            modifier = Modifier
-                .size(72.dp)
-                .clip(RoundedCornerShape(24.dp))
-                .background(SaliGradients.brand(true)),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = "Z",
-                style = MaterialTheme.typography.displayMedium,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
-            )
-        }
-        Spacer(modifier = Modifier.height(14.dp))
-        Text("Sali-ZZai", style = MaterialTheme.typography.headlineMedium)
-        Spacer(modifier = Modifier.height(4.dp))
+        BrandOrb(size = 92.dp)
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            "Sali-ZZai",
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(modifier = Modifier.height(6.dp))
         Text(
             "دستیار هوشمند Z.ai روی اندروید — چت، تفکر عمیق، جستجوی وب، تصویر و تحلیل فایل",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
             modifier = Modifier.padding(horizontal = 24.dp)
         )
-        Spacer(modifier = Modifier.height(22.dp))
+        Spacer(modifier = Modifier.height(24.dp))
 
         Column(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
@@ -677,18 +713,24 @@ private fun SuggestionCard(
 ) {
     Surface(
         onClick = onClick,
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(18.dp),
         color = MaterialTheme.colorScheme.surfaceContainer,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        modifier = modifier.heightIn(min = 92.dp)
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.8f)),
+        modifier = modifier.heightIn(min = 104.dp)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
-            Text(
-                tag,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary
-            )
-            Spacer(modifier = Modifier.height(4.dp))
+            Surface(
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.13f),
+                shape = RoundedCornerShape(50)
+            ) {
+                Text(
+                    tag,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
             Text(
                 prompt,
                 style = MaterialTheme.typography.bodySmall,
@@ -696,6 +738,15 @@ private fun SuggestionCard(
                 maxLines = 3,
                 overflow = TextOverflow.Ellipsis
             )
+            Spacer(modifier = Modifier.height(6.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                Icon(
+                    Icons.Filled.NorthEast,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.65f),
+                    modifier = Modifier.size(14.dp)
+                )
+            }
         }
     }
 }
@@ -713,14 +764,16 @@ private fun MessageItem(
     canRegenerate: Boolean,
     onCopy: () -> Unit,
     onSpeak: () -> Unit,
-    onRegenerate: () -> Unit
+    onRegenerate: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val isUser = message.role == "user"
     val showActions = !isUser && message.content.isNotBlank() && !message.isError
     val sources = remember(message.sources) { parseSources(message.sources) }
+    val dark = isDark(MaterialTheme.colorScheme.background)
 
     Column(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         horizontalAlignment = if (isUser) Alignment.End else Alignment.Start
     ) {
         if (!isUser && reasoningText.isNotBlank()) {
@@ -730,32 +783,49 @@ private fun MessageItem(
                 isStreaming = reasoningStreaming,
                 modifier = Modifier
                     .widthIn(max = 560.dp)
-                    .padding(bottom = 6.dp)
+                    .padding(start = 32.dp, bottom = 6.dp)
             )
         }
 
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
+            horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
+            verticalAlignment = Alignment.Bottom
         ) {
+            if (!isUser) {
+                SaliBrandAvatar(size = 24.dp)
+                Spacer(modifier = Modifier.size(8.dp))
+            }
             val bubbleShape = RoundedCornerShape(
                 topStart = 20.dp,
                 topEnd = 20.dp,
-                bottomStart = if (isUser) 20.dp else 6.dp,
-                bottomEnd = if (isUser) 6.dp else 20.dp
+                bottomStart = if (isUser) 20.dp else 8.dp,
+                bottomEnd = if (isUser) 8.dp else 20.dp
             )
             val bubbleModifier = Modifier
                 .widthIn(max = 560.dp)
+                // A little lift under the user's bubble separates the two sides
+                // of the conversation; assistant bubbles stay flat and calm.
+                .shadow(
+                    elevation = if (isUser) 8.dp else 0.dp,
+                    shape = bubbleShape,
+                    clip = false
+                )
                 .clip(bubbleShape)
                 .then(
-                    if (isUser) Modifier.background(SaliGradients.userBubble(isDark(MaterialTheme.colorScheme.background)))
-                    else Modifier.background(MaterialTheme.colorScheme.surfaceContainer)
+                    if (isUser) {
+                        Modifier.background(SaliGradients.userBubble(dark))
+                    } else {
+                        Modifier
+                            .background(MaterialTheme.colorScheme.surfaceContainer)
+                            .liveBorder(streaming && !message.isError, bubbleShape)
+                    }
                 )
                 .then(
                     if (!isUser && message.isError) {
                         Modifier.border(
                             1.dp,
-                            MaterialTheme.colorScheme.error.copy(alpha = 0.4f),
+                            MaterialTheme.colorScheme.error.copy(alpha = 0.45f),
                             bubbleShape
                         )
                     } else Modifier
@@ -784,7 +854,7 @@ private fun MessageItem(
             LazyRow(
                 modifier = Modifier
                     .widthIn(max = 560.dp)
-                    .padding(top = 6.dp),
+                    .padding(top = 6.dp, start = if (isUser) 0.dp else 32.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 items(sources, key = { it.url }) { source ->
@@ -795,49 +865,81 @@ private fun MessageItem(
 
         if (showActions) {
             Row(
-                modifier = Modifier.padding(top = 2.dp, start = 2.dp, end = 2.dp),
-                horizontalArrangement = Arrangement.spacedBy(0.dp),
+                modifier = Modifier.padding(start = 32.dp, top = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = onCopy, modifier = Modifier.size(30.dp)) {
-                    Icon(
-                        Icons.Filled.ContentCopy,
-                        contentDescription = "کپی",
-                        modifier = Modifier.size(15.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                Surface(
+                    shape = RoundedCornerShape(50),
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    border = BorderStroke(
+                        1.dp,
+                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
                     )
-                }
-                IconButton(onClick = onSpeak, modifier = Modifier.size(30.dp)) {
-                    Icon(
-                        if (isSpeaking) Icons.Filled.StopCircle else Icons.Filled.VolumeUp,
-                        contentDescription = if (isSpeaking) "توقف پخش" else "پخش صوتی",
-                        modifier = Modifier.size(15.dp),
-                        tint = if (isSpeaking) MaterialTheme.colorScheme.error
-                        else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                if (canRegenerate) {
-                    IconButton(onClick = onRegenerate, modifier = Modifier.size(30.dp)) {
-                        Icon(
-                            Icons.Filled.Refresh,
-                            contentDescription = "پاسخ دوباره",
-                            modifier = Modifier.size(15.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 2.dp)
+                    ) {
+                        MessageAction(
+                            icon = Icons.Filled.ContentCopy,
+                            label = "کپی",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            onClick = onCopy
                         )
+                        MessageAction(
+                            icon = if (isSpeaking) Icons.Filled.StopCircle else Icons.Filled.VolumeUp,
+                            label = if (isSpeaking) "توقف پخش" else "پخش صوتی",
+                            tint = if (isSpeaking) MaterialTheme.colorScheme.error
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                            onClick = onSpeak
+                        )
+                        if (canRegenerate) {
+                            MessageAction(
+                                icon = Icons.Filled.Refresh,
+                                label = "پاسخ دوباره",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                onClick = onRegenerate
+                            )
+                        }
                     }
                 }
+                Spacer(modifier = Modifier.size(8.dp))
+                Text(
+                    text = formatClock(message.createdAt),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f)
+                )
                 if (message.tokensUsed > 0) {
-                    Spacer(modifier = Modifier.size(4.dp))
                     Text(
-                        "${message.tokensUsed} توکن",
+                        text = " · ${message.tokensUsed} توکن",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f)
                     )
                 }
             }
         }
     }
 }
+
+@Composable
+private fun MessageAction(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    tint: Color,
+    onClick: () -> Unit
+) {
+    IconButton(onClick = onClick, modifier = Modifier.size(32.dp)) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            modifier = Modifier.size(15.dp),
+            tint = tint
+        )
+    }
+}
+
+private fun formatClock(timestamp: Long): String =
+    SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(timestamp))
 
 @Composable
 private fun SourceChip(source: WebSearchResult) {
@@ -958,6 +1060,9 @@ private fun ChatInputBar(
     onMicClick: () -> Unit,
     onStopClick: () -> Unit
 ) {
+    val dark = isDark(MaterialTheme.colorScheme.background)
+    val shape = RoundedCornerShape(26.dp)
+
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -971,13 +1076,12 @@ private fun ChatInputBar(
                 verticalAlignment = Alignment.Bottom,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(26.dp))
+                    // Floating composer: shadow lifts it off the message list,
+                    // gradient hairline appears while an answer is streaming.
+                    .shadow(elevation = 14.dp, shape = shape, clip = false)
+                    .clip(shape)
                     .background(MaterialTheme.colorScheme.surfaceContainer)
-                    .border(
-                        1.dp,
-                        MaterialTheme.colorScheme.outlineVariant,
-                        RoundedCornerShape(26.dp)
-                    )
+                    .liveBorder(isStreaming, shape)
                     .padding(start = 4.dp, end = 4.dp, top = 4.dp, bottom = 4.dp)
             ) {
                 IconButton(onClick = onUploadClick, modifier = Modifier.size(40.dp)) {
@@ -1007,21 +1111,38 @@ private fun ChatInputBar(
                         unfocusedContainerColor = Color.Transparent
                     )
                 )
-                IconButton(onClick = onToggleWebSearch, modifier = Modifier.size(40.dp)) {
-                    Icon(
-                        Icons.Filled.Language,
-                        contentDescription = "جستجوی وب",
-                        modifier = Modifier.size(19.dp),
-                        tint = if (webSearchEnabled) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                IconButton(onClick = onMicClick, modifier = Modifier.size(40.dp)) {
-                    if (isListening) {
-                        CircularProgressIndicator(
+                // Web search reads as a switchable pill instead of a bare icon.
+                Box(
+                    modifier = Modifier
+                        .padding(bottom = 4.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(
+                            if (webSearchEnabled) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                            else Color.Transparent
+                        )
+                ) {
+                    IconButton(onClick = onToggleWebSearch, modifier = Modifier.size(36.dp)) {
+                        Icon(
+                            Icons.Filled.Language,
+                            contentDescription = "جستجوی وب",
                             modifier = Modifier.size(18.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.primary
+                            tint = if (webSearchEnabled) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                IconButton(
+                    onClick = onMicClick,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .pulseHalo(isListening, MaterialTheme.colorScheme.primary)
+                ) {
+                    if (isListening) {
+                        Box(
+                            modifier = Modifier
+                                .size(18.dp)
+                                .clip(CircleShape)
+                                .background(SaliGradients.brand(dark))
                         )
                     } else {
                         Icon(
@@ -1038,18 +1159,15 @@ private fun ChatInputBar(
                     animationSpec = tween(140),
                     label = "send-size"
                 )
-                val sendBrush: androidx.compose.ui.graphics.Brush = when {
-                    isStreaming -> androidx.compose.ui.graphics.SolidColor(
-                        MaterialTheme.colorScheme.error.copy(alpha = 0.15f)
-                    )
-                    sendEnabled -> SaliGradients.brand(isDark(MaterialTheme.colorScheme.background))
-                    else -> androidx.compose.ui.graphics.SolidColor(
-                        MaterialTheme.colorScheme.surfaceContainerHigh
-                    )
+                val sendBrush: Brush = when {
+                    isStreaming -> SolidColor(MaterialTheme.colorScheme.error.copy(alpha = 0.15f))
+                    sendEnabled -> SaliGradients.brand(dark)
+                    else -> SolidColor(MaterialTheme.colorScheme.surfaceContainerHigh)
                 }
                 Box(
                     modifier = Modifier
                         .size(sendSize)
+                        .pulseHalo(isStreaming, MaterialTheme.colorScheme.error)
                         .clip(CircleShape)
                         .background(sendBrush)
                         .clickable(enabled = isStreaming || sendEnabled) {
