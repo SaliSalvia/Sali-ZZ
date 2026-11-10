@@ -10,6 +10,7 @@ import android.provider.MediaStore
 import android.util.Base64
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -40,7 +41,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -56,6 +56,9 @@ import androidx.compose.ui.unit.dp
 import com.salizzai.app.SaliZZaiApp
 import com.salizzai.app.data.model.ImageGenerationRequest
 import com.salizzai.app.data.model.ImageModels
+import com.salizzai.app.ui.components.BrandOrb
+import com.salizzai.app.ui.components.SaliGradientButton
+import com.salizzai.app.ui.components.SaliTopBar
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -102,18 +105,11 @@ fun ImageGenScreen(modifier: Modifier = Modifier) {
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text("تولید تصویر", style = MaterialTheme.typography.titleLarge)
-                        Text(
-                            "GLM-Image / CogView-4",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
+            SaliTopBar(
+                title = "تولید تصویر",
+                subtitle = "GLM-Image / CogView-4"
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -166,25 +162,14 @@ fun ImageGenScreen(modifier: Modifier = Modifier) {
                 }
             }
 
-            Button(
+            SaliGradientButton(
+                text = if (loading) "در حال ساخت تصویر…" else "تولید تصویر",
+                icon = Icons.Filled.AutoAwesome,
+                loading = loading,
+                enabled = prompt.isNotBlank(),
                 onClick = { generate() },
-                enabled = prompt.isNotBlank() && !loading,
                 modifier = Modifier.fillMaxWidth()
-            ) {
-                if (loading) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(18.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.onPrimary
-                    )
-                    Spacer(modifier = Modifier.size(8.dp))
-                    Text("در حال ساخت تصویر…")
-                } else {
-                    Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.size(8.dp))
-                    Text("تولید تصویر")
-                }
-            }
+            )
 
             error?.let {
                 Text("❌ $it", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
@@ -257,14 +242,18 @@ fun ImageGenScreen(modifier: Modifier = Modifier) {
             }
 
             if (imageData == null && !loading) {
-                Box(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(180.dp)
-                        .clip(RoundedCornerShape(18.dp))
-                        .background(MaterialTheme.colorScheme.surfaceContainer),
-                    contentAlignment = Alignment.Center
+                        .height(200.dp)
+                        .clip(RoundedCornerShape(22.dp))
+                        .background(MaterialTheme.colorScheme.surfaceContainer)
+                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(22.dp)),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
+                    BrandOrb(size = 64.dp)
+                    Spacer(modifier = Modifier.height(12.dp))
                     Text(
                         "تصویر ساخته‌شده اینجا نمایش داده می‌شود",
                         style = MaterialTheme.typography.bodySmall,

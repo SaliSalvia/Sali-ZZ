@@ -38,7 +38,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -53,6 +52,9 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.salizzai.app.SaliZZaiApp
 import com.salizzai.app.data.db.entity.Conversation
+import com.salizzai.app.ui.components.SaliEmptyState
+import com.salizzai.app.ui.components.SaliIconTile
+import com.salizzai.app.ui.components.SaliTopBar
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -116,9 +118,12 @@ fun HistoryScreen(
     val dateFormatter = remember { SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault()) }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            TopAppBar(
-                title = { Text("تاریخچه گفتگوها") },
+            SaliTopBar(
+                title = "تاریخچه گفتگوها",
+                subtitle = if (conversations.isEmpty()) "هنوز گفتگویی نیست"
+                else "${conversations.size} گفتگو",
                 actions = {
                     IconButton(onClick = onNewChat) {
                         Icon(Icons.Filled.Add, contentDescription = "گفتگوی جدید")
@@ -138,6 +143,8 @@ fun HistoryScreen(
                 onValueChange = { viewModel.updateQuery(it) },
                 placeholder = { Text("جستجو در گفتگوها…") },
                 leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                singleLine = true,
+                shape = RoundedCornerShape(18.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 12.dp, vertical = 8.dp)
@@ -148,31 +155,13 @@ fun HistoryScreen(
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 if (conversations.isEmpty()) {
-                    item {
-                        Column(
-                            modifier = Modifier.fillMaxWidth().padding(top = 64.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Icon(
-                                imageVector = if (query.isBlank()) Icons.Filled.History else Icons.Filled.Search,
-                                contentDescription = null,
-                                modifier = Modifier.size(36.dp),
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                            Text(
-                                text = if (query.isBlank()) "هنوز گفتگویی ندارید" else "نتیجه‌ای پیدا نشد",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.padding(top = 12.dp)
-                            )
-                            Text(
-                                text = if (query.isBlank()) "اولین گفتگویتان را از صفحه چت شروع کنید."
-                                else "عبارت جستجو را کوتاه‌تر یا متفاوت وارد کنید.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(top = 4.dp)
-                            )
-                        }
+                    item(key = "empty") {
+                        SaliEmptyState(
+                            icon = if (query.isBlank()) Icons.Filled.History else Icons.Filled.Search,
+                            title = if (query.isBlank()) "هنوز گفتگویی ندارید" else "نتیجه‌ای پیدا نشد",
+                            subtitle = if (query.isBlank()) "اولین گفتگویتان را از صفحه چت شروع کنید."
+                            else "عبارت جستجو را کوتاه‌تر یا متفاوت وارد کنید."
+                        )
                     }
                 }
                 items(conversations, key = { it.id }) { conv ->
@@ -181,12 +170,17 @@ fun HistoryScreen(
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 2.dp),
+                            .padding(vertical = 2.dp)
+                            .animateItem(),
                         onClick = { onOpenConversation(conv.id) },
-                        shape = RoundedCornerShape(18.dp),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                        shape = RoundedCornerShape(20.dp),
+                        border = BorderStroke(
+                            1.dp,
+                            if (conv.pinned) MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
+                            else MaterialTheme.colorScheme.outlineVariant
+                        ),
                         colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surface
+                            containerColor = MaterialTheme.colorScheme.surfaceContainer
                         ),
                         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                     ) {
@@ -194,22 +188,11 @@ fun HistoryScreen(
                             modifier = Modifier.fillMaxWidth().padding(14.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(42.dp)
-                                    .background(
-                                        MaterialTheme.colorScheme.primaryContainer,
-                                        RoundedCornerShape(14.dp)
-                                    ),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    Icons.Filled.ChatBubbleOutline,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    modifier = Modifier.size(21.dp)
-                                )
-                            }
+                            SaliIconTile(
+                                icon = Icons.Filled.ChatBubbleOutline,
+                                size = 42.dp,
+                                gradient = conv.pinned
+                            )
                             Spacer(modifier = Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {

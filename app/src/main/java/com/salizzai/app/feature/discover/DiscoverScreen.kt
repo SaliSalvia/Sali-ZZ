@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -19,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.NorthEast
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.TravelExplore
 import androidx.compose.material3.Card
@@ -31,8 +33,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -48,6 +50,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.salizzai.app.SaliZZaiApp
 import com.salizzai.app.data.model.WebSearchResult
+import com.salizzai.app.ui.components.SaliEmptyState
+import com.salizzai.app.ui.components.SaliIconTile
+import com.salizzai.app.ui.components.SaliTopBar
 import kotlinx.coroutines.launch
 
 private data class RecencyOption(val value: String?, val label: String)
@@ -98,18 +103,11 @@ fun DiscoverScreen(modifier: Modifier = Modifier) {
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text("کشف در وب", style = MaterialTheme.typography.titleLarge)
-                        Text(
-                            "موتور search-prime زد‌ای‌آی",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
+            SaliTopBar(
+                title = "کشف در وب",
+                subtitle = "موتور search-prime زد‌ای‌آی"
             )
         },
         modifier = modifier
@@ -136,7 +134,8 @@ fun DiscoverScreen(modifier: Modifier = Modifier) {
                         }
                     }
                 },
-                shape = RoundedCornerShape(18.dp),
+                shape = RoundedCornerShape(20.dp),
+                singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = { runSearch() }),
                 modifier = Modifier
@@ -160,10 +159,18 @@ fun DiscoverScreen(modifier: Modifier = Modifier) {
             Spacer(modifier = Modifier.height(6.dp))
 
             when {
-                loading -> Box(
-                    modifier = Modifier.fillMaxWidth().padding(28.dp),
-                    contentAlignment = Alignment.Center
-                ) { CircularProgressIndicator() }
+                loading -> Column(
+                    modifier = Modifier.fillMaxWidth().padding(36.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    CircularProgressIndicator(strokeWidth = 2.5.dp)
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Text(
+                        "در حال جستجوی وب…",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
 
                 error != null -> Text(
                     "❌ $error",
@@ -172,14 +179,17 @@ fun DiscoverScreen(modifier: Modifier = Modifier) {
                     modifier = Modifier.padding(16.dp)
                 )
 
-                searched && results.isEmpty() -> EmptyState(
+                searched && results.isEmpty() -> SaliEmptyState(
+                    icon = Icons.Filled.TravelExplore,
                     title = "نتیجه‌ای پیدا نشد",
                     subtitle = "عبارت دیگری را امتحان کنید یا بازهٔ زمانی را بازتر کنید."
                 )
 
-                results.isEmpty() -> EmptyState(
+                results.isEmpty() -> SaliEmptyState(
+                    icon = Icons.Filled.TravelExplore,
                     title = "جستجوی وب زنده",
-                    subtitle = "نتایج به‌صورت خلاصه و آمادهٔ استناد نمایش داده می‌شوند — همان موتوری که چت زد‌ای‌آی استفاده می‌کند."
+                    subtitle = "نتایج به‌صورت خلاصه و آمادهٔ استناد نمایش داده می‌شوند — همان موتوری که چت زد‌ای‌آی استفاده می‌کند.",
+                    orb = true
                 )
 
                 else -> LazyColumn(
@@ -190,12 +200,14 @@ fun DiscoverScreen(modifier: Modifier = Modifier) {
                         Text(
                             "${results.size} نتیجه",
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(start = 4.dp, bottom = 2.dp)
                         )
                     }
                     items(results, key = { it.url }) { result ->
                         SearchResultCard(
                             result = result,
+                            modifier = Modifier.animateItem(),
                             onOpen = {
                                 runCatching {
                                     context.startActivity(
@@ -215,48 +227,52 @@ fun DiscoverScreen(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun EmptyState(title: String, subtitle: String) {
-    Column(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 40.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Icon(
-            Icons.Filled.TravelExplore,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(40.dp)
-        )
-        Spacer(modifier = Modifier.height(10.dp))
-        Text(title, style = MaterialTheme.typography.titleMedium)
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            subtitle,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-}
-
-@Composable
-private fun SearchResultCard(result: WebSearchResult, onOpen: () -> Unit) {
+private fun SearchResultCard(
+    result: WebSearchResult,
+    onOpen: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     Card(
         onClick = onOpen,
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(20.dp),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainer
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        modifier = Modifier.fillMaxWidth()
+        modifier = modifier.fillMaxWidth()
     ) {
-        Row(modifier = Modifier.padding(14.dp)) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = result.hostName.ifBlank { "وب" },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Spacer(modifier = Modifier.height(3.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                        shape = RoundedCornerShape(50)
+                    ) {
+                        Text(
+                            text = result.hostName.ifBlank { "وب" },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                        )
+                    }
+                    if (result.date.isNotBlank()) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = result.date,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = result.name,
                     style = MaterialTheme.typography.titleSmall,
@@ -272,15 +288,9 @@ private fun SearchResultCard(result: WebSearchResult, onOpen: () -> Unit) {
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis
                 )
-                if (result.date.isNotBlank()) {
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = result.date,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
             }
+            Spacer(modifier = Modifier.width(10.dp))
+            SaliIconTile(icon = Icons.Filled.NorthEast, size = 30.dp)
         }
     }
 }

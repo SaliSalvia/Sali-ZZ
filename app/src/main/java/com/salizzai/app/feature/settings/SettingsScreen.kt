@@ -8,6 +8,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -39,7 +40,6 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -60,7 +60,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -72,7 +71,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -88,7 +89,12 @@ import com.salizzai.app.data.model.AvailableModels
 import com.salizzai.app.data.model.ReasoningEffort
 import com.salizzai.app.data.model.ZaiModel
 import com.salizzai.app.feature.auth.AuthViewModel
+import com.salizzai.app.ui.components.SaliGradientButton
+import com.salizzai.app.ui.components.SaliIconTile
+import com.salizzai.app.ui.components.SaliTopBar
+import com.salizzai.app.ui.components.isDarkTheme
 import com.salizzai.app.ui.theme.ErrorRed
+import com.salizzai.app.ui.theme.SaliGradients
 import com.salizzai.app.ui.theme.SaliPurple
 import com.salizzai.app.ui.theme.SuccessGreen
 import com.salizzai.app.ui.theme.WarningAmber
@@ -212,18 +218,11 @@ fun SettingsScreen(
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text("تنظیمات", style = MaterialTheme.typography.titleLarge)
-                        Text(
-                            "Sali-ZZai v${BuildConfig.VERSION_NAME}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
+            SaliTopBar(
+                title = "تنظیمات",
+                subtitle = "Sali-ZZai v${BuildConfig.VERSION_NAME}"
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -342,28 +341,13 @@ fun SettingsScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Button(
-                            onClick = { checkAndSave(baseUrlDraft, apiKeyDraft) },
-                            enabled = apiKeyDraft.isNotBlank() && status !is ApiStatus.Checking
-                        ) {
-                            if (status is ApiStatus.Checking) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    strokeWidth = 2.dp,
-                                    color = MaterialTheme.colorScheme.onPrimary
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("در حال بررسی…")
-                            } else {
-                                Icon(
-                                    Icons.Filled.CheckCircle,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("بررسی و ذخیره")
-                            }
-                        }
+                        SaliGradientButton(
+                            text = if (status is ApiStatus.Checking) "در حال بررسی…" else "بررسی و ذخیره",
+                            icon = Icons.Filled.CheckCircle,
+                            loading = status is ApiStatus.Checking,
+                            enabled = apiKeyDraft.isNotBlank(),
+                            onClick = { checkAndSave(baseUrlDraft, apiKeyDraft) }
+                        )
                         if (hasApiKey) {
                             TextButton(onClick = {
                                 editingKey = false
@@ -827,12 +811,20 @@ private fun ModelRow(
     val container =
         if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
         else Color.Transparent
+    val shape = RoundedCornerShape(16.dp)
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .clickable(onClick = onSelect)
+            .clip(shape)
             .background(container)
+            .then(
+                if (selected) {
+                    Modifier.border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f), shape)
+                } else {
+                    Modifier
+                }
+            )
+            .clickable(onClick = onSelect)
             .padding(vertical = 4.dp, horizontal = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -887,23 +879,25 @@ private fun ToggleRow(
 
 @Composable
 private fun ChoicePill(text: String, selected: Boolean, onClick: () -> Unit) {
-    val background =
-        if (selected) MaterialTheme.colorScheme.primary
-        else MaterialTheme.colorScheme.surfaceVariant
+    // Selected pills carry the brand gradient; the rest stay quiet and flat.
+    val background: Brush =
+        if (selected) SaliGradients.brand(isDarkTheme())
+        else SolidColor(MaterialTheme.colorScheme.surfaceVariant)
     val foreground =
-        if (selected) MaterialTheme.colorScheme.onPrimary
+        if (selected) Color.White
         else MaterialTheme.colorScheme.onSurfaceVariant
-    Surface(
-        color = background,
-        shape = RoundedCornerShape(50),
+    Box(
         modifier = Modifier
             .clip(RoundedCornerShape(50))
-            .clickable(onClick = onClick)
+            .background(background)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
     ) {
         Text(
             text,
             color = foreground,
             style = MaterialTheme.typography.labelLarge,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
         )
     }
@@ -942,7 +936,7 @@ private fun SettingsSection(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(22.dp),
         border = androidx.compose.foundation.BorderStroke(
             1.dp,
             MaterialTheme.colorScheme.outlineVariant
@@ -952,20 +946,7 @@ private fun SettingsSection(
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(32.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        icon,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
+                SaliIconTile(icon = icon, size = 34.dp)
                 Spacer(modifier = Modifier.width(10.dp))
                 Text(
                     title,
@@ -973,7 +954,11 @@ private fun SettingsSection(
                     fontWeight = FontWeight.SemiBold
                 )
             }
-            Spacer(modifier = Modifier.height(12.dp))
+            HorizontalDivider(
+                modifier = Modifier.padding(top = 12.dp, bottom = 2.dp),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
+            )
+            Spacer(modifier = Modifier.height(10.dp))
             content()
         }
     }

@@ -9,6 +9,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -29,6 +30,25 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import com.salizzai.app.ui.theme.SaliGradients
 
 /**
@@ -43,7 +63,7 @@ private fun Color.isDarkColor(): Boolean =
     (0.299 * red + 0.587 * green + 0.114 * blue) < 0.5f
 
 @Composable
-private fun isDarkTheme(): Boolean = MaterialTheme.colorScheme.background.isDarkColor()
+fun isDarkTheme(): Boolean = MaterialTheme.colorScheme.background.isDarkColor()
 
 /** Small squared-off brand mark: gradient tile with the Z monogram. */
 @Composable
@@ -197,3 +217,168 @@ fun Modifier.topGlow(color: Color = MaterialTheme.colorScheme.primary): Modifier
             )
         )
     }
+
+/**
+ * Shared header for the secondary screens: the same top glow, transparent app
+ * bar and hairline the chat screen uses, so switching tabs never loses the
+ * brand treatment.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SaliTopBar(
+    title: String,
+    subtitle: String? = null,
+    actions: @Composable RowScope.() -> Unit = {}
+) {
+    Column {
+        Box(modifier = Modifier.topGlow()) {
+            TopAppBar(
+                title = {
+                    Column {
+                        Text(
+                            text = title,
+                            style = MaterialTheme.typography.titleLarge,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        if (subtitle != null) {
+                            Text(
+                                text = subtitle,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                },
+                actions = actions,
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+            )
+        }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
+    }
+}
+
+/**
+ * Rounded tile holding a section or list icon. Brand-filled (`gradient`) for
+ * primary marks, tinted for repeated section headers.
+ */
+@Composable
+fun SaliIconTile(
+    icon: ImageVector,
+    modifier: Modifier = Modifier,
+    size: Dp = 40.dp,
+    tint: Color? = null,
+    gradient: Boolean = false
+) {
+    val color = tint ?: MaterialTheme.colorScheme.primary
+    Box(
+        modifier = modifier
+            .size(size)
+            .clip(RoundedCornerShape(size * 0.34f))
+            .background(
+                if (gradient) SaliGradients.brand(isDarkTheme())
+                else SolidColor(color.copy(alpha = 0.14f))
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = if (gradient) Color.White else color,
+            modifier = Modifier.size(size * 0.52f)
+        )
+    }
+}
+
+/** Centered empty / placeholder block shared by the list screens. */
+@Composable
+fun SaliEmptyState(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    modifier: Modifier = Modifier,
+    orb: Boolean = false
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 28.dp, vertical = 44.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        if (orb) {
+            BrandOrb(size = 84.dp)
+        } else {
+            SaliIconTile(icon = icon, size = 52.dp, gradient = true)
+        }
+        Spacer(modifier = Modifier.height(14.dp))
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = subtitle,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
+    }
+}
+
+/** Filled brand-gradient action button with an optional spinner state. */
+@Composable
+fun SaliGradientButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    loading: Boolean = false,
+    icon: ImageVector? = null
+) {
+    val shape = RoundedCornerShape(16.dp)
+    val active = enabled && !loading
+    Box(
+        modifier = modifier
+            .height(48.dp)
+            .clip(shape)
+            .background(
+                if (enabled) SaliGradients.brand(isDarkTheme())
+                else SolidColor(MaterialTheme.colorScheme.surfaceContainerHigh)
+            )
+            .clickable(enabled = active, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+            modifier = Modifier.padding(horizontal = 18.dp)
+        ) {
+            if (loading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    strokeWidth = 2.dp,
+                    color = Color.White
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+            } else if (icon != null) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = if (enabled) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+            Text(
+                text = text,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = if (enabled) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
