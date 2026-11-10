@@ -103,14 +103,19 @@ base64 -d keystore.b64 > check.keystore && cmp sali-zzai-release.keystore check.
 
 | نام Secret (دقیقاً همین) | مقدار |
 |---|---|
-| `SALI_KEYSTORE_BASE64` | محتوای کامل `keystore.b64` (یک خط) |
+| `SIGNING_KEYSTORE_BASE64` | محتوای کامل `keystore.b64` (یک خط) |
 | `SALI_KEYSTORE_PASSWORD` | رمز keystore |
 | `SALI_KEY_ALIAS` | `salizzai` (alias شما) |
 | `SALI_KEY_PASSWORD` | رمز کلید (اگر همان رمز keystore است، همان را بگذارید) |
 
-> ⚠️ در کد workflow متغیرهای محیطی `SIGNING_KEYSTORE_PASSWORD`، `SIGNING_KEY_ALIAS` و `SIGNING_KEY_PASSWORD` وجود دارند، ولی **نام Secret**ها همان چهار مورد جدول بالا است. اگر Secret را با نام اشتباه بسازید، بی‌صدا نادیده گرفته می‌شود و APK با کلید دیباگ امضا می‌شود.
+> ⚠️ نام‌ها یکدست نیستند و همین‌جا بیشترین اشتباه رخ می‌دهد: Secret مربوط به Base64 دقیقاً `SIGNING_KEYSTORE_BASE64` است، ولی سه Secret دیگر با پیشوند `SALI_` تعریف شده‌اند (`SALI_KEYSTORE_PASSWORD`، `SALI_KEY_ALIAS`، `SALI_KEY_PASSWORD`). در فایل workflow این سه مورد به متغیرهای محیطی `SIGNING_KEYSTORE_PASSWORD`، `SIGNING_KEY_ALIAS` و `SIGNING_KEY_PASSWORD` نگاشت می‌شوند. اگر Secret را با نام اشتباه بسازید، بی‌صدا نادیده گرفته می‌شود و APK با کلید دیباگ امضا می‌شود.
 
 هیچ‌کدام از این‌ها را در فایل‌های ریپو، کد، Issue یا چت نگذارید. `.gitignore` هم برای اطمینان، `*.keystore` و `*.jks` را نادیده می‌گیرد.
+
+دو نکتهٔ ریز ولی رایج:
+
+- این‌ها باید **Repository secret** باشند (همان صفحه‌ای که باز می‌شود)؛ اگر اشتباهاً در تب **Variables** یا به‌عنوان Environment secret بسازید، workflow آن‌ها را نمی‌بیند.
+- مقدار را بدون فاصله یا شکست خط اضافه‌کنید؛ فاصلهٔ اضافه در ابتدا/انتهای Base64 باعث خطای decode می‌شود.
 
 ---
 
@@ -137,6 +142,28 @@ Release will be signed with the repository keystore.
 
 4. Release به‌طور خودکار با تگ `v<versionName>` ساخته می‌شود (`ساخت خودکار تگ از versionName`).
 
+### اگر گام «Publish signed release» شکست خورد
+
+workflow دو job دارد: `Test and build APK` و `Publish signed release`. job دوم فقط وقتی ادامه می‌دهد که APK واقعاً امضاشده باشد، وگرنه عمداً متوقف می‌شود:
+
+```
+::error::No signed release APK exists. Configure all four SALI signing secrets before publishing.
+```
+
+این پیام یعنی حداقل یکی از چهار Secret خالی یا با نام اشتباه است.
+
+نکتهٔ مهم: **موفقیت گام `Build release APK` به معنی امضا نیست.** در حالت ناقص بودن Secretها همین گام این اخطار را چاپ می‌کند و موفق ادامه می‌دهد:
+
+```
+::warning::Release APK skipped: configure all four SALI signing secrets before publishing.
+```
+
+برای تشخیص و رفع:
+
+1. در لاگ job `Test and build APK` دنبال آن `::warning::` بگردید؛ اگر هست، Secretها ناقص‌اند.
+2. در **Settings → Secrets and variables → Actions → Secrets** هر چهار نام را با مقدار غیرخالی ببینید (نام‌ها را با جدول بخش ۴ تطبیق دهید؛ Base64 با `SIGNING_` شروع می‌شود، سه مورد دیگر با `SALI_`).
+3. پس از اصلاح، لازم نیست کامیت کنید: همان اجرای ناموفق را با **Re-run all jobs** دوباره بزنید.
+
 ---
 
 ## ۶) بررسی امضای APK
@@ -160,7 +187,7 @@ sha256sum -c SHA256SUMS.txt
 
 ## ۷) ساخت امضاشده به‌صورت محلی (اختیاری)
 
-برای اینکه روی سیستم خودتان هم APK ریلیزِ امضاشده بسازید، همان چهار مقدار را به‌عنوان متغیر محیطی بدهید (نام‌ها اینجا `SIGNING_*` هستند، چون `app/build.gradle.kts` همین‌ها را می‌خواند):
+برای اینکه روی سیستم خودتان هم APK ریلیزِ امضاشده بسازید، همان چهار مقدار را به‌عنوان متغیر محیطی بدهید. نام‌ها اینجا همه با پیشوند `SIGNING_` هستند چون `app/build.gradle.kts` همین‌ها را می‌خواند (به نام Secretها در بخش ۴ کاری نداشته باشید):
 
 ### لینوکس / مک
 

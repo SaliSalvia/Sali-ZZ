@@ -189,7 +189,7 @@ SHA256SUMS.txt
 
 | Secret | مقدار |
 |--------|-------|
-| `SALI_KEYSTORE_BASE64` | خروجی `base64 -w0 sali.keystore` |
+| `SIGNING_KEYSTORE_BASE64` | خروجی `base64 -w0 sali.keystore` |
 | `SALI_KEYSTORE_PASSWORD` | رمز keystore |
 | `SALI_KEY_ALIAS` | نام alias |
 | `SALI_KEY_PASSWORD` | رمز کلید |
