@@ -147,7 +147,11 @@ jobs:
           [[ -n "$SIGNING_KEY_PASSWORD" ]] || missing+=("SALI_KEY_PASSWORD")
           if [[ ${#missing[@]} -eq 0 ]]; then
             printf '%s' "$SIGNING_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/sali.keystore"
-            echo "SIGNING_KEYSTORE_FILE=$RUNNER_TEMP/sali.keystore" >> "$GITHUB_ENV"
+            # GITHUB_ENV only reaches *later* steps, so export it here as well:
+            # without this, ./gradlew below never sees SIGNING_KEYSTORE_FILE and
+            # silently falls back to signingConfigs.debug.
+            export SIGNING_KEYSTORE_FILE="$RUNNER_TEMP/sali.keystore"
+            echo "SIGNING_KEYSTORE_FILE=$SIGNING_KEYSTORE_FILE" >> "$GITHUB_ENV"
             ./gradlew --no-daemon assembleRelease
             cp app/build/outputs/apk/release/app-release.apk dist/Sali-ZZai-release.apk
             echo "release_built=true" >> "$GITHUB_OUTPUT"
@@ -155,6 +159,26 @@ jobs:
             echo "::warning::Release APK skipped: missing signing secrets: ${missing[*]}. Add them under Settings -> Secrets and variables -> Actions -> Secrets."
             echo "release_built=false" >> "$GITHUB_OUTPUT"
           fi
+
+      # A green "Build release APK" step does not prove the production key was
+      # used, so inspect the certificate that actually ended up in the APK.
+      - name: Verify the release APK is not debug-signed
+        if: steps.release.outputs.release_built == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          apksigner_bin="$(find "${ANDROID_HOME:-/usr/local/lib/android/sdk}/build-tools" -name apksigner -type f 2>/dev/null | sort -V | tail -n1)"
+          if [[ -z "$apksigner_bin" ]]; then
+            echo "::error::apksigner not found in the Android SDK build-tools"
+            exit 1
+          fi
+          certs="$("$apksigner_bin" verify --print-certs dist/Sali-ZZai-release.apk)"
+          echo "$certs"
+          if grep -q 'CN=Android Debug' <<<"$certs"; then
+            echo "::error::Release APK is signed with the Android debug key, not the repository keystore. Check that the four signing secrets decode correctly."
+            exit 1
+          fi
+          echo "Release APK is signed with the repository keystore."
 
       - name: Checksums
         run: cd dist && sha256sum *.apk > SHA256SUMS.txt

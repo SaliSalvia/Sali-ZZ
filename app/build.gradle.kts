@@ -51,6 +51,19 @@ android {
     val envKeyPass   = System.getenv("SIGNING_KEY_PASSWORD")
     val hasReleaseKeystore = keystorePath != null && File(keystorePath).exists()
 
+    // Secrets present but no keystore file means the signing environment is
+    // broken (e.g. SIGNING_KEYSTORE_FILE exported only for later steps). Fail
+    // loudly here instead of silently publishing a debug-signed "release".
+    val signingEnvPresent = !envStorePass.isNullOrBlank() &&
+        !envKeyAlias.isNullOrBlank() && !envKeyPass.isNullOrBlank()
+    if (signingEnvPresent && !hasReleaseKeystore) {
+        throw GradleException(
+            "Signing secrets are set but SIGNING_KEYSTORE_FILE='${keystorePath ?: "<unset>"}' " +
+                "does not exist, so the release APK would be signed with the debug key. " +
+                "Export SIGNING_KEYSTORE_FILE in the same shell that runs Gradle."
+        )
+    }
+
     if (hasReleaseKeystore) {
         signingConfigs {
             create("release") {
