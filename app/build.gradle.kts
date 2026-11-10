@@ -17,8 +17,8 @@ android {
         applicationId = "com.salizzai.app"
         minSdk = 26  // Required for PBKDF2WithHmacSHA256
         targetSdk = 35
-        versionCode = 8  // 2.1.1 shipped as 6, so 2.2.0 was 7 and 2.2.1 must be higher again
-        versionName = "2.2.1"
+        versionCode = 9  // 2.1.1 shipped as 6, so 2.2.0 was 7, 2.2.1 was 8 and 2.3.0 must be higher again
+        versionName = "2.3.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
 
